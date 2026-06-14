@@ -4,17 +4,21 @@
  * ゲーム本体 index.html はこのファイルが公開する window.BoxelChars を読み込んで使う。
  * キャラを差し替える/増やすときは、原則このファイルだけを編集すればよい。
  *
+ * ■ 1選手は「3つの独立要素」の組み合わせで定義する
+ *     role   : 役割（ポジション） … "QB" "RB" "WR" "OL" "P"(パンター) "DF"
+ *     animal : 見た目の動物       … "owl" "rabbit" "squirrel" "bear" "rhino" "wolf" "cat"
+ *     stats  : パラメータ         … プリセット名("speedy"等) か {speed,power,catch,kick}
+ *   さらに name(表示名) と fur(毛色 0xRRGGBB) を持つ。
+ *   例「足が速い・くま・パンター」:
+ *     { name:"ダッシュ", role:"P", animal:"bear", fur:FUR.bear, stats:"speedy" }
+ *   3要素は自由に組み合わせ可能（どの動物でも・どの役割でも・どのパラメータでも）。
+ *
  * ■ いちばん簡単な差し替え方法
  *   下の OFFENSE / DEFENSE / MANAGER の「設定リスト」を書き換える。
- *   1キャラ = 1設定:
- *     { name: 表示名, animal: 見た目の種類, fur: 毛色(0xRRGGBB) }
- *   animal に使える種類: "owl" "rabbit" "squirrel" "bear" "rhino" "wolf" "cat"
- *   （未知の種類を指定すると、汎用の見た目になる）
  *
  * ■ 注意
- *   OFFENSE は配列の順番が役割に対応する:
- *     [0]=QB(司令塔) [1]=RB(走る役) [2]=WR(受け手) [3][4]=ライン
- *   並び順を変えると役割（テーピング不利など）も入れ替わる。
+ *   役割はカードの並び順ではなく role フィールドで決まる。
+ *   OFFENSE / DEFENSE はそれぞれ必ず5体にする（並べる位置が5枠のため）。
  *
  * ■ 新しい動物の見た目を足したいとき
  *   makeAnimal() の if (role === "...") 分岐を1つ追加する。
@@ -40,22 +44,43 @@
   // ===== チームのユニフォーム色 =====
   var TEAM = { home: 0xee8e3c, away: 0x3f7fd0 };
 
-  // ===== 攻撃チーム（味方）の編成 =====  ※順番=役割（QB,RB,WR,ライン,ライン）
+  // ===== 役割（ポジション） =====  選手の role に指定する
+  var ROLES = {
+    QB: { label: "クォーターバック（司令塔・パスを投げる）" },
+    RB: { label: "ランニングバック（走る役）" },
+    WR: { label: "レシーバー（受け手）" },
+    OL: { label: "ラインマン（守る役・押し込む）" },
+    P:  { label: "パンター（蹴る役）" },
+    DF: { label: "ディフェンス（守備）" }
+  };
+
+  // ===== パラメータのプリセット =====  選手の stats に名前で指定して使い回せる
+  // 値は 1〜10 の目安（speed=足の速さ, power=パワー, catch=捕球, kick=キック）
+  var STAT_PRESETS = {
+    speedy:   { speed: 9, power: 4, catch: 6, kick: 3 }, // 足が速い
+    power:    { speed: 4, power: 9, catch: 5, kick: 3 }, // パワー型
+    hands:    { speed: 6, power: 4, catch: 9, kick: 3 }, // 捕球がうまい
+    kicker:   { speed: 5, power: 5, catch: 4, kick: 9 }, // キックが得意
+    allround: { speed: 6, power: 6, catch: 6, kick: 6 }  // バランス型
+  };
+
+  // ===== 攻撃チーム（味方）の編成 =====  各選手 = name / role / animal+fur / stats
+  // role・animal・stats は独立。例: 足が速い・くま・パンター も作れる。
   var OFFENSE = [
-    { name: "ミミィ",   animal: "owl",      fur: FUR.owl },
-    { name: "ピョン太", animal: "rabbit",   fur: FUR.rabbit },
-    { name: "ナッツ",   animal: "squirrel", fur: FUR.squirrel },
-    { name: "ゴロ",     animal: "bear",     fur: FUR.bear },
-    { name: "ガード",   animal: "rhino",    fur: FUR.rhino }
+    { name: "ミミィ",   role: "QB", animal: "owl",      fur: FUR.owl,      stats: "allround" },
+    { name: "ピョン太", role: "RB", animal: "rabbit",   fur: FUR.rabbit,   stats: "speedy" },
+    { name: "ナッツ",   role: "WR", animal: "squirrel", fur: FUR.squirrel, stats: "hands" },
+    { name: "ゴロ",     role: "OL", animal: "bear",     fur: FUR.bear,     stats: "power" },
+    { name: "ガード",   role: "OL", animal: "rhino",    fur: FUR.rhino,    stats: "power" }
   ];
 
   // ===== 守備チーム（相手）の編成 =====
   var DEFENSE = [
-    { name: "あいて1", animal: "wolf", fur: FUR.wolf },
-    { name: "あいて2", animal: "wolf", fur: FUR.wolf },
-    { name: "あいて3", animal: "wolf", fur: FUR.wolf },
-    { name: "あいて4", animal: "wolf", fur: FUR.wolf },
-    { name: "あいて5", animal: "wolf", fur: FUR.wolf }
+    { name: "あいて1", role: "DF", animal: "wolf", fur: FUR.wolf, stats: "allround" },
+    { name: "あいて2", role: "DF", animal: "wolf", fur: FUR.wolf, stats: "speedy" },
+    { name: "あいて3", role: "DF", animal: "wolf", fur: FUR.wolf, stats: "power" },
+    { name: "あいて4", role: "DF", animal: "wolf", fur: FUR.wolf, stats: "allround" },
+    { name: "あいて5", role: "DF", animal: "wolf", fur: FUR.wolf, stats: "power" }
   ];
 
   // ===== マネージャー（撮影担当）の設定 =====
@@ -210,9 +235,27 @@
     return g;
   }
 
+  // stats はプリセット名(文字列)でも直接オブジェクトでも受け付ける
+  function resolveStats(s) {
+    if (typeof s === "string") return STAT_PRESETS[s] || STAT_PRESETS.allround;
+    return s || STAT_PRESETS.allround;
+  }
+
+  // 3要素（役割・見た目・パラメータ）を合成して1選手をつくる。
+  // 見た目は animal/fur から、役割と能力は userData に持たせる。
+  function makePlayer(cfg, jersey) {
+    var g = makeAnimal(cfg.animal, jersey, cfg.fur);
+    g.userData.name = cfg.name;
+    g.userData.role = cfg.role;
+    g.userData.animal = cfg.animal;
+    g.userData.stats = resolveStats(cfg.stats);
+    return g;
+  }
+
   global.BoxelChars = {
-    FUR: FUR, TEAM: TEAM,
+    FUR: FUR, TEAM: TEAM, ROLES: ROLES, STAT_PRESETS: STAT_PRESETS,
     OFFENSE: OFFENSE, DEFENSE: DEFENSE, MANAGER: MANAGER,
-    box: box, makeAnimal: makeAnimal, makeManager: makeManager
+    box: box, makeAnimal: makeAnimal, makeManager: makeManager,
+    makePlayer: makePlayer, resolveStats: resolveStats
   };
 })(window);

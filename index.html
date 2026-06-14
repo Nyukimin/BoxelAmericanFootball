@@ -79,13 +79,13 @@
   };
   var hintsShown = {};
   var pendingTape = null, tapeCooldown = 2;
-  var TAPE_NAMES = BC.OFFENSE.map(function (c) { return c.name; });
   var anim = null;
   var view = "quarter";
   var camPos = new THREE.Vector3(), camTarget = new THREE.Vector3();
 
   function lerp(a, b, t) { return a + (b - a) * t; }
   function rand(a, b) { return a + Math.random() * (b - a); }
+  function byRole(r) { for (var i = 0; i < offense.length; i++) { if (offense[i].userData.role === r) return offense[i]; } return null; }
 
   function box(w, h, d, color, x, y, z) {
     var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color: color }));
@@ -135,7 +135,7 @@
       offense[i].position.set(spread[i], 0, state.los);
       offense[i].rotation.y = 0;
     }
-    qb = offense[0]; rb = offense[1]; wr = offense[2];
+    qb = byRole("QB") || offense[0]; rb = byRole("RB") || offense[1]; wr = byRole("WR") || offense[2];
     if (formation === "shotgun") { qb.position.set(0, 0, state.los - 6); wr.position.set(11, 0, state.los); }
     else if (formation === "i") { qb.position.set(0, 0, state.los - 2.5); rb.position.set(0, 0, state.los - 6.5); }
     else if (formation === "single") { qb.position.set(0, 0, state.los - 3); rb.position.set(0, 0, state.los - 6); wr.position.set(11, 0, state.los); }
@@ -149,8 +149,8 @@
   function outcome(formation, play) {
     var r = Math.random(), y = 0, complete = true, turnover = false, msg = "";
     var taped = state.taped;
-    var runHurt = taped && (taped.role === "rb" || taped.role === "line");
-    var passHurt = taped && (taped.role === "qb" || taped.role === "wr");
+    var runHurt = taped && (taped.role === "RB" || taped.role === "OL");
+    var passHurt = taped && (taped.role === "QB" || taped.role === "WR");
     if (play === "run") {
       y = rand(1, 6); if (formation === "i" || formation === "goal") y += rand(1.5, 4);
       if (r > 0.9) y += rand(8, 22);
@@ -177,7 +177,7 @@
     var endZ = Math.min(state.los + o.yards, GOAL_FAR);
     o.endZ = endZ;
     var dur, kind;
-    if (play === "run") { kind = "run"; dur = 1.0 + o.yards * 0.04; carrier = rb; }
+    if (play === "run") { kind = "run"; carrier = rb; var sp = (carrier.userData.stats && carrier.userData.stats.speed) || 6; dur = (1.0 + o.yards * 0.04) * (1.15 - sp * 0.03); }
     else { kind = "pass"; dur = 0.9; carrier = wr; }
     anim = { t: 0, dur: dur, kind: kind, o: o, startZ: startZ, endZ: endZ, phase: "move", catchZ: endZ };
     if (kind === "pass") {
@@ -247,10 +247,9 @@
     var idx = Math.floor(rand(0, offense.length));
     var p = offense[idx];
     if (!p) return;
-    var role = idx === 0 ? "qb" : idx === 1 ? "rb" : idx === 2 ? "wr" : "line";
     var band = box(0.42, 0.16, 0.5, 0xffffff, 0.32, 0.22, 0.02);
     p.add(band);
-    state.taped = { role: role, name: TAPE_NAMES[idx] || "せんしゅ", band: band, player: p };
+    state.taped = { role: p.userData.role, name: p.userData.name || "せんしゅ", band: band, player: p };
     pendingTape = state.taped;
     tapeCooldown = 3;
   }
@@ -286,8 +285,10 @@
     placeFormation("single");
     var lead = "ホイッスル先生：";
     if (pendingTape) {
-      var affect = (pendingTape.role === "rb" || pendingTape.role === "line") ? "ラン" : "パス";
-      lead += pendingTape.name + " を<b>テーピング</b>中。今回は<b>" + affect + "</b>がちょっと不利かも。ほかの手もあるよ。 ";
+      var rl = pendingTape.role;
+      var affect = (rl === "RB" || rl === "OL") ? "ラン" : (rl === "QB" || rl === "WR") ? "パス" : null;
+      if (affect) lead += pendingTape.name + " を<b>テーピング</b>中。今回は<b>" + affect + "</b>がちょっと不利かも。ほかの手もあるよ。 ";
+      else lead += pendingTape.name + " を<b>テーピング</b>中。すぐ復活するよ。 ";
       pendingTape = null;
     }
     setBubble(lead + "まずは<b>隊形</b>を選んでね！");
@@ -401,8 +402,8 @@
     var sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(20, 50, -10); scene.add(sun);
     scene.add(field());
 
-    BC.OFFENSE.forEach(function (c) { var a = BC.makeAnimal(c.animal, BC.TEAM.home, c.fur); offense.push(a); scene.add(a); });
-    BC.DEFENSE.forEach(function (c) { var b = BC.makeAnimal(c.animal, BC.TEAM.away, c.fur); defense.push(b); scene.add(b); });
+    BC.OFFENSE.forEach(function (c) { var a = BC.makePlayer(c, BC.TEAM.home); offense.push(a); scene.add(a); });
+    BC.DEFENSE.forEach(function (c) { var b = BC.makePlayer(c, BC.TEAM.away); defense.push(b); scene.add(b); });
 
     ball = makeBall(); scene.add(ball);
     ballMarker = makeMarker(); scene.add(ballMarker);
