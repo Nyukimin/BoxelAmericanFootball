@@ -1,0 +1,218 @@
+/*
+ * characters.js — キャラクター定義（データ駆動・差し替え可能）
+ *
+ * ゲーム本体 index.html はこのファイルが公開する window.BoxelChars を読み込んで使う。
+ * キャラを差し替える/増やすときは、原則このファイルだけを編集すればよい。
+ *
+ * ■ いちばん簡単な差し替え方法
+ *   下の OFFENSE / DEFENSE / MANAGER の「設定リスト」を書き換える。
+ *   1キャラ = 1設定:
+ *     { name: 表示名, animal: 見た目の種類, fur: 毛色(0xRRGGBB) }
+ *   animal に使える種類: "owl" "rabbit" "squirrel" "bear" "rhino" "wolf" "cat"
+ *   （未知の種類を指定すると、汎用の見た目になる）
+ *
+ * ■ 注意
+ *   OFFENSE は配列の順番が役割に対応する:
+ *     [0]=QB(司令塔) [1]=RB(走る役) [2]=WR(受け手) [3][4]=ライン
+ *   並び順を変えると役割（テーピング不利など）も入れ替わる。
+ *
+ * ■ 新しい動物の見た目を足したいとき
+ *   makeAnimal() の if (role === "...") 分岐を1つ追加する。
+ */
+(function (global) {
+  "use strict";
+
+  var THREE = global.THREE;
+
+  // 立方体パーツの基本ヘルパー
+  function box(w, h, d, color, x, y, z) {
+    var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color: color }));
+    m.position.set(x || 0, y || 0, z || 0);
+    return m;
+  }
+
+  // ===== パレット（毛色） =====
+  var FUR = {
+    owl: 0xe7d4a8, rabbit: 0xf6f0e6, squirrel: 0xd38c50,
+    bear: 0xb58359, rhino: 0xaeb7c1, wolf: 0x8f9bac, cat: 0xe9c9a3
+  };
+
+  // ===== チームのユニフォーム色 =====
+  var TEAM = { home: 0xee8e3c, away: 0x3f7fd0 };
+
+  // ===== 攻撃チーム（味方）の編成 =====  ※順番=役割（QB,RB,WR,ライン,ライン）
+  var OFFENSE = [
+    { name: "ミミィ",   animal: "owl",      fur: FUR.owl },
+    { name: "ピョン太", animal: "rabbit",   fur: FUR.rabbit },
+    { name: "ナッツ",   animal: "squirrel", fur: FUR.squirrel },
+    { name: "ゴロ",     animal: "bear",     fur: FUR.bear },
+    { name: "ガード",   animal: "rhino",    fur: FUR.rhino }
+  ];
+
+  // ===== 守備チーム（相手）の編成 =====
+  var DEFENSE = [
+    { name: "あいて1", animal: "wolf", fur: FUR.wolf },
+    { name: "あいて2", animal: "wolf", fur: FUR.wolf },
+    { name: "あいて3", animal: "wolf", fur: FUR.wolf },
+    { name: "あいて4", animal: "wolf", fur: FUR.wolf },
+    { name: "あいて5", animal: "wolf", fur: FUR.wolf }
+  ];
+
+  // ===== マネージャー（撮影担当）の設定 =====
+  var MANAGER = { name: "ミケ", fur: 0xf0e2c8, jacket: 0x2f9e8f };
+
+  // 動物選手を1体つくる（role=見た目の種類, jersey=ユニフォーム色, fur=毛色）
+  function makeAnimal(role, jersey, fur) {
+    var g = new THREE.Group();
+    var DARK = 0x2b2b2b, WHITE = 0xffffff;
+
+    // 脚と靴
+    g.add(box(0.42, 0.7, 0.5, fur, -0.3, 0.45, 0));
+    g.add(box(0.42, 0.7, 0.5, fur, 0.3, 0.45, 0));
+    g.add(box(0.5, 0.26, 0.74, 0x4a3322, -0.3, 0.13, 0.1));
+    g.add(box(0.5, 0.26, 0.74, 0x4a3322, 0.3, 0.13, 0.1));
+
+    // 胴体（ユニフォーム）
+    g.add(box(1.32, 1.15, 1.0, jersey, 0, 1.35, 0));
+    // 肩パッド（アメフトらしいシルエット）
+    g.add(box(0.52, 0.42, 1.06, jersey, -0.66, 1.82, 0));
+    g.add(box(0.52, 0.42, 1.06, jersey, 0.66, 1.82, 0));
+    // えり＋胸の番号プレート＋縦ライン
+    g.add(box(0.5, 0.2, 0.5, fur, 0, 1.96, 0.06));
+    g.add(box(0.66, 0.72, 0.06, WHITE, 0, 1.42, 0.52));
+    g.add(box(0.08, 0.92, 0.05, jersey, 0, 1.42, 0.56));
+    // 腕（ユニフォーム）＋そで口ライン＋手（毛色）＋リストバンド
+    g.add(box(0.32, 1.0, 0.42, jersey, -0.86, 1.42, 0));
+    g.add(box(0.32, 1.0, 0.42, jersey, 0.86, 1.42, 0));
+    g.add(box(0.34, 0.12, 0.44, WHITE, -0.86, 1.74, 0.02));
+    g.add(box(0.34, 0.12, 0.44, WHITE, 0.86, 1.74, 0.02));
+    g.add(box(0.36, 0.34, 0.46, fur, -0.86, 0.92, 0.04));
+    g.add(box(0.36, 0.34, 0.46, fur, 0.86, 0.92, 0.04));
+    g.add(box(0.38, 0.14, 0.48, 0xffd166, -0.86, 1.12, 0.04));
+    g.add(box(0.38, 0.14, 0.48, 0xffd166, 0.86, 1.12, 0.04));
+
+    // 頭（サブグループ）＋共通の顔（白目＋黒目＋ほっぺ）
+    var head = new THREE.Group();
+    head.position.set(0, 2.42, 0.02);
+    head.add(box(1.1, 1.02, 1.0, fur, 0, 0, 0));
+    head.add(box(0.28, 0.32, 0.1, WHITE, -0.25, 0.1, 0.47));
+    head.add(box(0.28, 0.32, 0.1, WHITE, 0.25, 0.1, 0.47));
+    head.add(box(0.14, 0.18, 0.1, DARK, -0.25, 0.08, 0.55));
+    head.add(box(0.14, 0.18, 0.1, DARK, 0.25, 0.08, 0.55));
+    head.add(box(0.16, 0.1, 0.06, 0xf6a6a0, -0.43, -0.02, 0.46));
+    head.add(box(0.16, 0.1, 0.06, 0xf6a6a0, 0.43, -0.02, 0.46));
+
+    if (role === "owl") {
+      head.add(box(0.44, 0.44, 0.05, 0xf4e4b0, -0.25, 0.08, 0.45));
+      head.add(box(0.44, 0.44, 0.05, 0xf4e4b0, 0.25, 0.08, 0.45));
+      head.add(box(0.22, 0.28, 0.24, 0xf4a93c, 0, -0.2, 0.52));
+      head.add(box(0.22, 0.4, 0.22, fur, -0.34, 0.64, 0));
+      head.add(box(0.22, 0.4, 0.22, fur, 0.34, 0.64, 0));
+    } else if (role === "rabbit") {
+      head.add(box(0.24, 0.9, 0.2, fur, -0.26, 0.88, 0));
+      head.add(box(0.24, 0.9, 0.2, fur, 0.26, 0.88, 0));
+      head.add(box(0.12, 0.62, 0.06, 0xf3b6c2, -0.26, 0.86, 0.11));
+      head.add(box(0.12, 0.62, 0.06, 0xf3b6c2, 0.26, 0.86, 0.11));
+      head.add(box(0.16, 0.12, 0.12, 0xf3b6c2, 0, -0.1, 0.52));
+      head.add(box(0.2, 0.16, 0.08, WHITE, 0, -0.26, 0.5));
+    } else if (role === "squirrel") {
+      head.add(box(0.24, 0.36, 0.22, fur, -0.32, 0.62, 0));
+      head.add(box(0.24, 0.36, 0.22, fur, 0.32, 0.62, 0));
+      head.add(box(0.24, 0.22, 0.2, 0xe8b07a, -0.42, -0.12, 0.34));
+      head.add(box(0.24, 0.22, 0.2, 0xe8b07a, 0.42, -0.12, 0.34));
+      head.add(box(0.16, 0.18, 0.08, WHITE, 0, -0.24, 0.5));
+      g.add(box(0.5, 1.5, 0.5, fur, 0, 1.55, -0.78));
+      g.add(box(0.52, 0.34, 0.52, 0xecc39a, 0, 1.95, -0.78));
+      g.add(box(0.44, 0.6, 0.44, fur, 0, 2.5, -0.5));
+      g.add(box(0.46, 0.3, 0.46, 0xecc39a, 0, 2.66, -0.5));
+    } else if (role === "bear") {
+      head.add(box(0.36, 0.36, 0.22, fur, -0.42, 0.5, 0));
+      head.add(box(0.36, 0.36, 0.22, fur, 0.42, 0.5, 0));
+      head.add(box(0.2, 0.2, 0.1, 0xc79b6a, -0.42, 0.5, 0.09));
+      head.add(box(0.2, 0.2, 0.1, 0xc79b6a, 0.42, 0.5, 0.09));
+      head.add(box(0.52, 0.42, 0.24, 0xd8b88c, 0, -0.2, 0.48));
+      head.add(box(0.2, 0.16, 0.12, DARK, 0, -0.12, 0.62));
+    } else if (role === "rhino") {
+      head.add(box(0.2, 0.28, 0.16, fur, -0.38, 0.56, 0));
+      head.add(box(0.2, 0.28, 0.16, fur, 0.38, 0.56, 0));
+      head.add(box(0.62, 0.44, 0.32, fur, 0, -0.24, 0.44));
+      head.add(box(0.18, 0.42, 0.2, 0xe6e0ce, 0, 0.02, 0.66));
+      head.add(box(0.1, 0.22, 0.14, 0xe6e0ce, 0, 0.34, 0.62));
+    } else if (role === "wolf") {
+      head.add(box(0.28, 0.42, 0.2, fur, -0.32, 0.62, 0));
+      head.add(box(0.28, 0.42, 0.2, fur, 0.32, 0.62, 0));
+      head.add(box(0.18, 0.18, 0.12, 0x33373d, -0.32, 0.8, 0.02));
+      head.add(box(0.18, 0.18, 0.12, 0x33373d, 0.32, 0.8, 0.02));
+      head.add(box(0.26, 0.07, 0.08, 0x5a6675, -0.25, 0.32, 0.5));
+      head.add(box(0.26, 0.07, 0.08, 0x5a6675, 0.25, 0.32, 0.5));
+      head.add(box(0.36, 0.32, 0.3, 0xe7ecf2, 0, -0.2, 0.46));
+      head.add(box(0.16, 0.14, 0.12, DARK, 0, -0.16, 0.62));
+      g.add(box(0.44, 0.5, 1.1, fur, 0, 1.2, -0.72));
+      g.add(box(0.42, 0.48, 0.36, 0xe7ecf2, 0, 1.2, -1.28));
+    } else if (role === "cat") {
+      head.add(box(0.28, 0.32, 0.16, fur, -0.3, 0.62, 0));
+      head.add(box(0.28, 0.32, 0.16, fur, 0.3, 0.62, 0));
+      head.add(box(0.14, 0.18, 0.06, 0xf3b6c2, -0.3, 0.6, 0.09));
+      head.add(box(0.14, 0.18, 0.06, 0xf3b6c2, 0.3, 0.6, 0.09));
+      head.add(box(0.14, 0.1, 0.1, 0xf3b6c2, 0, -0.12, 0.54));
+      head.add(box(0.42, 0.03, 0.03, 0x3a3a3a, -0.46, -0.16, 0.5));
+      head.add(box(0.42, 0.03, 0.03, 0x3a3a3a, 0.46, -0.16, 0.5));
+      g.add(box(0.26, 1.0, 0.26, fur, 0, 1.45, -0.62));
+      g.add(box(0.28, 0.24, 0.28, 0x6b5a48, 0, 1.55, -0.62));
+      g.add(box(0.28, 0.26, 0.28, fur, 0, 2.0, -0.62));
+    } else {
+      head.add(box(0.3, 0.3, 0.18, fur, -0.38, 0.52, 0));
+      head.add(box(0.3, 0.3, 0.18, fur, 0.38, 0.52, 0));
+      head.add(box(0.18, 0.14, 0.12, DARK, 0, -0.16, 0.56));
+    }
+
+    g.add(head);
+    g.scale.set(1.2, 1.2, 1.2);
+    g.userData.base = g.position.clone();
+    g.userData.head = head;
+    return g;
+  }
+
+  // サイドラインで試合を撮影するマネージャー（記録・分析の可視化）
+  function makeManager(cfg) {
+    cfg = cfg || MANAGER;
+    var g = new THREE.Group();
+    var fur = cfg.fur, jacket = cfg.jacket;
+    g.add(box(0.5, 0.5, 0.5, 0x6b4a2f, -0.3, 0.25, 0));
+    g.add(box(0.5, 0.5, 0.5, 0x6b4a2f, 0.3, 0.25, 0));
+    g.add(box(1.2, 1.0, 0.9, jacket, 0, 1.0, 0));
+    g.add(box(0.05, 0.42, 0.04, 0x333a42, -0.18, 1.25, 0.46));
+    g.add(box(0.05, 0.42, 0.04, 0x333a42, 0.18, 1.25, 0.46));
+    g.add(box(0.34, 0.26, 0.05, 0xffffff, 0, 0.98, 0.47));
+    g.add(box(0.95, 0.9, 0.9, fur, 0, 1.85, 0.04));
+    g.add(box(0.24, 0.26, 0.08, 0xffffff, -0.22, 1.92, 0.46));
+    g.add(box(0.24, 0.26, 0.08, 0xffffff, 0.22, 1.92, 0.46));
+    g.add(box(0.12, 0.15, 0.08, 0x222222, -0.22, 1.9, 0.51));
+    g.add(box(0.12, 0.15, 0.08, 0x222222, 0.22, 1.9, 0.51));
+    g.add(box(0.14, 0.1, 0.1, 0xf3b6c2, 0, 1.74, 0.48));
+    g.add(box(0.26, 0.26, 0.12, fur, -0.3, 2.4, 0));
+    g.add(box(0.26, 0.26, 0.12, fur, 0.3, 2.4, 0));
+    g.add(box(0.22, 0.7, 0.22, fur, 0, 1.0, -0.6));
+    g.add(box(0.18, 0.18, 0.5, jacket, -0.4, 1.55, 0.32));
+    g.add(box(0.18, 0.18, 0.5, jacket, 0.4, 1.55, 0.32));
+    var cam = new THREE.Group();
+    cam.add(box(0.85, 0.62, 0.78, 0x3a4048, 0, 0, 0));            // 本体
+    cam.add(box(0.52, 0.16, 0.5, 0x515a66, 0, 0.39, -0.05));      // 上ハンドル
+    var lens = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.26, 0.55, 16), new THREE.MeshLambertMaterial({ color: 0x0d0f12 }));
+    lens.rotation.x = Math.PI / 2; lens.position.set(0, 0, 0.55); cam.add(lens);
+    cam.add(box(0.52, 0.52, 0.08, 0x9fb6c9, 0, 0, 0.4));          // レンズの明るい縁
+    var rec = new THREE.Mesh(new THREE.SphereGeometry(0.09, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff3b30 }));
+    rec.position.set(0.34, 0.28, 0.22); cam.add(rec);
+    cam.add(box(0.2, 0.22, 0.22, 0x2b2f35, -0.32, 0.06, -0.34));  // 後ろのアイカップ
+    cam.position.set(0, 1.86, 0.62); g.add(cam);
+    g.scale.set(1.38, 1.38, 1.38);
+    g.userData.rec = rec;
+    return g;
+  }
+
+  global.BoxelChars = {
+    FUR: FUR, TEAM: TEAM,
+    OFFENSE: OFFENSE, DEFENSE: DEFENSE, MANAGER: MANAGER,
+    box: box, makeAnimal: makeAnimal, makeManager: makeManager
+  };
+})(window);

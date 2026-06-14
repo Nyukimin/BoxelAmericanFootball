@@ -61,11 +61,11 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="characters.js"></script>
 <script>
 (function () {
   "use strict";
-  var TEAM_A = 0xee8e3c, TEAM_B = 0x3f7fd0;
-  var FUR = { owl:0xe7d4a8, rabbit:0xf6f0e6, squirrel:0xd38c50, bear:0xb58359, rhino:0xaeb7c1, dog:0xe3a55b, gen:0x8fa0b3 };
+  var BC = window.BoxelChars;
 
   var scene, camera, renderer;
   var ball, ballMarker, trail, trailPts = [], manager = null;
@@ -79,7 +79,7 @@
   };
   var hintsShown = {};
   var pendingTape = null, tapeCooldown = 2;
-  var TAPE_NAMES = ["ミミィ", "ピョン太", "ナッツ", "ゴロ", "ガード"];
+  var TAPE_NAMES = BC.OFFENSE.map(function (c) { return c.name; });
   var anim = null;
   var view = "quarter";
   var camPos = new THREE.Vector3(), camTarget = new THREE.Vector3();
@@ -91,45 +91,6 @@
     var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color: color }));
     m.position.set(x || 0, y || 0, z || 0);
     return m;
-  }
-
-  function makeAnimal(role, jersey, fur) {
-    var g = new THREE.Group();
-    g.add(box(1.2, 0.25, 0.9, 0x6b4a2f, -0.32, 0.13, 0));
-    g.add(box(1.2, 0.25, 0.9, 0x6b4a2f, 0.32, 0.13, 0));
-    var body = box(1.25, 1.05, 0.95, jersey, 0, 0.85, 0); g.add(body);
-    var head = box(1.0, 0.92, 0.92, fur, 0, 1.85, 0.04); g.add(head);
-    g.add(box(0.16, 0.16, 0.08, 0x222222, -0.22, 1.95, 0.5));
-    g.add(box(0.16, 0.16, 0.08, 0x222222, 0.22, 1.95, 0.5));
-    var hy = 2.4;
-    if (role === "owl") {
-      g.add(box(0.2, 0.34, 0.2, fur, -0.32, hy, 0));
-      g.add(box(0.2, 0.34, 0.2, fur, 0.32, hy, 0));
-      g.add(box(0.16, 0.16, 0.18, 0xf4a93c, 0, 1.78, 0.52));
-    } else if (role === "rabbit") {
-      g.add(box(0.2, 0.7, 0.18, fur, -0.24, hy + 0.18, 0));
-      g.add(box(0.2, 0.7, 0.18, fur, 0.24, hy + 0.18, 0));
-    } else if (role === "squirrel") {
-      g.add(box(0.3, 0.3, 0.3, fur, -0.38, hy - 0.05, 0));
-      g.add(box(0.3, 0.3, 0.3, fur, 0.38, hy - 0.05, 0));
-      g.add(box(0.45, 1.0, 0.45, fur, 0, 0.9, -0.8));
-    } else if (role === "bear") {
-      g.add(box(0.32, 0.32, 0.2, fur, -0.36, hy - 0.02, 0));
-      g.add(box(0.32, 0.32, 0.2, fur, 0.36, hy - 0.02, 0));
-    } else if (role === "rhino") {
-      g.add(box(0.2, 0.2, 0.18, fur, -0.36, hy - 0.05, 0));
-      g.add(box(0.2, 0.2, 0.18, fur, 0.36, hy - 0.05, 0));
-      g.add(box(0.16, 0.36, 0.16, 0xe6e0ce, 0, 1.95, 0.56));
-    } else if (role === "dog") {
-      g.add(box(0.24, 0.36, 0.18, fur, -0.34, hy, 0));
-      g.add(box(0.24, 0.36, 0.18, fur, 0.34, hy, 0));
-    } else {
-      g.add(box(0.28, 0.22, 0.2, fur, -0.34, hy - 0.06, 0));
-      g.add(box(0.28, 0.22, 0.2, fur, 0.34, hy - 0.06, 0));
-    }
-    g.scale.set(0.8, 0.8, 0.8);
-    g.userData.base = g.position.clone();
-    return g;
   }
 
   function makeBall() {
@@ -149,33 +110,6 @@
     var arrow = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.6, 4), new THREE.MeshBasicMaterial({ color: 0xff8c1a }));
     arrow.rotation.x = Math.PI; arrow.position.y = 2.4; g.userData = { arrow: arrow }; g.add(arrow);
     g.userData.arrow = arrow;
-    return g;
-  }
-
-  // サイドラインで試合を撮影するマネージャー（記録・分析の可視化）
-  function makeManager() {
-    var g = new THREE.Group();
-    var fur = 0xf0e2c8, jacket = 0x2f9e8f;
-    g.add(box(0.5, 0.5, 0.5, 0x6b4a2f, -0.3, 0.25, 0));
-    g.add(box(0.5, 0.5, 0.5, 0x6b4a2f, 0.3, 0.25, 0));
-    g.add(box(1.2, 1.0, 0.9, jacket, 0, 1.0, 0));
-    g.add(box(0.95, 0.9, 0.9, fur, 0, 1.85, 0.04));
-    g.add(box(0.16, 0.16, 0.08, 0x222222, -0.22, 1.92, 0.46));
-    g.add(box(0.16, 0.16, 0.08, 0x222222, 0.22, 1.92, 0.46));
-    g.add(box(0.26, 0.26, 0.12, fur, -0.3, 2.4, 0));
-    g.add(box(0.26, 0.26, 0.12, fur, 0.3, 2.4, 0));
-    g.add(box(0.22, 0.7, 0.22, fur, 0, 1.0, -0.6));
-    g.add(box(0.18, 0.18, 0.5, jacket, -0.4, 1.55, 0.32));
-    g.add(box(0.18, 0.18, 0.5, jacket, 0.4, 1.55, 0.32));
-    var cam = new THREE.Group();
-    cam.add(box(0.55, 0.45, 0.5, 0x222831, 0, 0, 0));
-    var lens = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.3, 12), new THREE.MeshLambertMaterial({ color: 0x111418 }));
-    lens.rotation.x = Math.PI / 2; lens.position.set(0, 0, 0.3); cam.add(lens);
-    var rec = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff3b30 }));
-    rec.position.set(0.2, 0.18, 0.16); cam.add(rec);
-    cam.position.set(0, 1.85, 0.5); g.add(cam);
-    g.scale.set(0.85, 0.85, 0.85);
-    g.userData.rec = rec;
     return g;
   }
 
@@ -467,14 +401,12 @@
     var sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(20, 50, -10); scene.add(sun);
     scene.add(field());
 
-    var roles = ["owl", "rabbit", "squirrel", "bear", "rhino"];
-    var furs = [FUR.owl, FUR.rabbit, FUR.squirrel, FUR.bear, FUR.rhino];
-    for (var i = 0; i < 5; i++) { var a = makeAnimal(roles[i], TEAM_A, furs[i]); offense.push(a); scene.add(a); }
-    for (var j = 0; j < 5; j++) { var b = makeAnimal("gen", TEAM_B, FUR.gen); defense.push(b); scene.add(b); }
+    BC.OFFENSE.forEach(function (c) { var a = BC.makeAnimal(c.animal, BC.TEAM.home, c.fur); offense.push(a); scene.add(a); });
+    BC.DEFENSE.forEach(function (c) { var b = BC.makeAnimal(c.animal, BC.TEAM.away, c.fur); defense.push(b); scene.add(b); });
 
     ball = makeBall(); scene.add(ball);
     ballMarker = makeMarker(); scene.add(ballMarker);
-    manager = makeManager(); manager.position.set(-32, 0, 56); scene.add(manager);
+    manager = BC.makeManager(BC.MANAGER); manager.position.set(-32, 0, 56); scene.add(manager);
 
     var tg = new THREE.BufferGeometry();
     tg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(50 * 3), 3));
