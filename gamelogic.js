@@ -206,6 +206,80 @@
     return { fumble: fumble, lostToOpponent: lostToOpponent };
   }
 
+  /**
+   * CPU の攻撃スタイルをランダムに選択する。
+   * @returns {"run"|"pass"|"balanced"}
+   */
+  function pickCpuStyle() {
+    var r = Math.random();
+    if (r < 0.38) return "run";
+    if (r < 0.76) return "pass";
+    return "balanced";
+  }
+
+  /**
+   * 守備の采配をシミュレートして得点と結果を返す（純粋関数）。
+   * @param {object} opts
+   *   opts.front     {"runStop"|"balanced"|"passDef"|"goalLine"}
+   *   opts.tactic    {"normal"|"blitz"|"zone"}
+   *   opts.los       {number} フィールド座標値
+   *   opts.pinBonus  {number} パントで押し込んだボーナス（省略時 0）
+   *   opts.dPower    {number} 守備パワー (1-10)
+   *   opts.dSpeed    {number} 守備スピード (1-10)
+   *   opts.cpuStyle  {"run"|"pass"|"balanced"}
+   * @returns {{ points: 0|3|7, turnoverWon: boolean, msg: string }}
+   */
+  function defenseDrive(opts) {
+    var front    = opts.front;
+    var tactic   = opts.tactic;
+    var los      = opts.los;
+    var pinBonus = (opts.pinBonus != null) ? opts.pinBonus : 0;
+    var dPower   = opts.dPower;
+    var dSpeed   = opts.dSpeed;
+    var cpuStyle = opts.cpuStyle;
+
+    function clamp(x) { return Math.max(0, Math.min(1, x)); }
+
+    var base = clamp(1 - (los - 10) / 100 - pinBonus);
+
+    var counter = 0;
+    if (front === "runStop" && cpuStyle === "run") {
+      counter = -0.25;
+    } else if (front === "runStop" && cpuStyle === "pass") {
+      counter = 0.15;
+    } else if (front === "passDef" && cpuStyle === "pass") {
+      counter = -0.25;
+    } else if (front === "passDef" && cpuStyle === "run") {
+      counter = 0.15;
+    } else if (front === "goalLine" && cpuStyle === "run") {
+      counter = -0.30;
+    } else if (front === "goalLine" && cpuStyle === "pass") {
+      counter = 0.22;
+    } else if (front === "balanced") {
+      counter = -0.05;
+    } else {
+      counter = 0;
+    }
+
+    var statRed = ((dPower / 6 + dSpeed / 6) / 2 - 1) * 0.15;
+    var goodness = clamp(base + counter - statRed + (tactic === "zone" ? -0.05 : 0));
+
+    if (tactic === "blitz") {
+      var toChance = 0.14 + 0.10 * (dPower / 6);
+      if (Math.random() < toChance) {
+        return { points: 0, turnoverWon: true, msg: "ブリッツ的中！ ボールを奪った！" };
+      }
+      goodness = clamp(goodness + 0.10);
+    }
+
+    var tdC = (0.12 + 0.30 * goodness) * (tactic === "zone" ? 0.7 : 1);
+    var fgC = tdC + 0.18 + 0.15 * goodness;
+    var r = Math.random();
+    if (r < tdC) return { points: 7, turnoverWon: false, msg: "相手にタッチダウンを許した…" };
+    if (r < fgC) return { points: 3, turnoverWon: false, msg: "相手にフィールドゴールを許した。" };
+    return { points: 0, turnoverWon: false, msg: "守備陣がストップ！ ナイスディフェンス！" };
+  }
+
   window.BoxelGame = {
     outcome: outcome,
     opponentDrive: opponentDrive,
@@ -215,6 +289,8 @@
     fgAimSwing: fgAimSwing,
     fgResolve: fgResolve,
     fumbleProbability: fumbleProbability,
-    fumbleCheck: fumbleCheck
+    fumbleCheck: fumbleCheck,
+    pickCpuStyle: pickCpuStyle,
+    defenseDrive: defenseDrive
   };
 })();

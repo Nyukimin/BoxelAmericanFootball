@@ -76,7 +76,8 @@
   var GOAL_NEAR = 10, GOAL_FAR = 110, MAX_DRIVES = 6;
   var state = {
     los: 40, toGo: 10, down: 1, home: 0, away: 0, drive: 0,
-    phase: "formation", formation: null, play: null, taped: null
+    phase: "formation", formation: null, play: null, taped: null,
+    mode: "offense", cpuStyle: null, defLos: 40, defPin: 0
   };
   var hintsShown = {};
   var pendingTape = null, tapeCooldown = 2;
@@ -214,29 +215,60 @@
     nextPlayReady();
   }
 
-  // 相手の攻撃を簡易シミュレート（フィールド位置で得点確率が変わる）
-  function opponentPossession(pinBonus) {
-    var res = window.BoxelGame.opponentDrive(state.los, pinBonus);
-    state.away += res.points;
-    return res.msg;
+  // 攻守交代：守備フェーズへ移行する
+  function endPossession(pinBonus) {
+    state.mode = "defense";
+    state.defLos = state.los;
+    state.defPin = pinBonus || 0;
+    state.cpuStyle = window.BoxelGame.pickCpuStyle();
+    state.phase = "formation";
+    setBubble("ホイッスル先生：守備の番！ 相手を止めよう。<b>守備隊形</b>を選んで。");
+    chooseDefenseUI();
   }
 
-  // 攻守交代：相手の攻撃→自分の攻撃に戻す（規定シリーズで試合終了）
-  function endPossession(pinBonus) {
-    state.drive += 1;
+  function chooseDefenseUI() {
+    setCards([
+      { ico:"🛡️", t:"ラン重視", d:"中央を固めて走りを止める", fn:function(){ pickDefenseTactic("runStop"); } },
+      { ico:"⚖️", t:"バランス", d:"ランもパスも無難に", fn:function(){ pickDefenseTactic("balanced"); } },
+      { ico:"🪁", t:"パス重視", d:"後ろを厚くしてパスを防ぐ", fn:function(){ pickDefenseTactic("passDef"); } },
+      { ico:"🧱", t:"ゴールライン", d:"密集して短い走りを止める", fn:function(){ pickDefenseTactic("goalLine"); } }
+    ]);
+  }
+  function pickDefenseTactic(front) {
+    setBubble("ホイッスル先生：<b>戦術</b>は？");
+    setCards([
+      { ico:"✋", t:"通常", d:"基本の守り", fn:function(){ resolveDefense(front, "normal"); } },
+      { ico:"⚡", t:"ブリッツ", d:"突っ込んで奪う。当たれば好機、外せば手薄", fn:function(){ resolveDefense(front, "blitz"); } },
+      { ico:"🕸️", t:"ゾーン", d:"大きいのを防ぐ堅実な守り", fn:function(){ resolveDefense(front, "zone"); } }
+    ]);
+  }
+  function resolveDefense(front, tactic) {
+    setCards([]);
     state.phase = "animating";
-    var oppMsg = opponentPossession(pinBonus);
+    state.drive += 1;
+    var dPower = teamStat(defense, "DF", "power");
+    var dSpeed = teamStat(defense, "DF", "speed");
+    var res = window.BoxelGame.defenseDrive({
+      front: front, tactic: tactic, los: state.defLos, pinBonus: state.defPin,
+      dPower: dPower, dSpeed: dSpeed, cpuStyle: state.cpuStyle
+    });
+    if (res.turnoverWon) {
+      setBubble("ホイッスル先生：" + res.msg + " 味方ボール！");
+    } else {
+      state.away += res.points;
+      setBubble("ホイッスル先生：" + res.msg);
+      if (res.points > 0) flashScore();
+    }
     updateHUD();
     setTimeout(function () {
-      setBubble("ホイッスル先生：" + oppMsg);
-      flashScore();
-      setTimeout(function () {
-        if (state.drive >= MAX_DRIVES) { gameOver(); return; }
-        recoverTape();
-        state.down = 1; state.toGo = 10; state.los = 40; state.formation = null; state.phase = "formation";
-        placeFormation("single"); updateHUD(); chooseFormationUI();
-      }, 1800);
-    }, 800);
+      if (state.drive >= MAX_DRIVES) { gameOver(); return; }
+      recoverTape();
+      state.mode = "offense";
+      state.down = 1; state.toGo = 10;
+      state.los = res.turnoverWon ? Math.min(70, state.defLos) : 40;
+      state.formation = null; state.phase = "formation";
+      placeFormation("single"); updateHUD(); chooseFormationUI();
+    }, 1500);
   }
 
   function gameOver() {
@@ -252,6 +284,7 @@
     recoverTape();
     state.home = 0; state.away = 0; state.drive = 0;
     state.down = 1; state.toGo = 10; state.los = 40; state.formation = null; state.phase = "formation";
+    state.mode = "offense"; state.cpuStyle = null;
     hintsShown = {};
     updateHUD(); chooseFormationUI();
   }

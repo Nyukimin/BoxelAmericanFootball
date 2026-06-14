@@ -651,7 +651,99 @@ if (loadError === null) {
 }
 
 // ============================================================
-// 15. 結果まとめ
+// 15. (h) 攻守交代後に守備隊形カードが 4 枚（ラン重視・パス重視を含む）
+// ============================================================
+if (loadError === null) {
+  Math.random = () => 0;
+
+  // 新鮮な状態でリセット
+  clickStart();
+  pump(5);
+
+  // 最初の攻守交代を引き起こす（ロングパスでインターセプト）
+  const csH = cards();
+  if (csH.length === 4 && csH[0].onclick) csH[0].onclick(); // shotgun
+
+  const playH = cards();
+  if (playH.length >= 3 && playH[2].onclick) playH[2].onclick(); // ロングパス（index=2）
+  pump(60);
+
+  // endPossession → chooseDefenseUI → 守備隊形カード 4 枚
+  const defCs = cards();
+  const defHtml = defCs.map(c => c._innerHTML || "");
+  const hasRanJushi = defHtml.some(h => h.includes("ラン重視"));
+  const hasPasDef   = defHtml.some(h => h.includes("パス重視"));
+
+  assert(
+    "(h) 攻守交代後、守備隊形カードが 4 枚（ラン重視・パス重視を含む）",
+    defCs.length === 4 && hasRanJushi && hasPasDef
+  );
+  if (defCs.length !== 4 || !hasRanJushi || !hasPasDef) {
+    console.log("  -> defCs.length:", defCs.length, "hasRanJushi:", hasRanJushi, "hasPasDef:", hasPasDef);
+    console.log("  -> cards HTML:", defHtml.map(h => h.substring(0, 60)));
+  }
+}
+
+// ============================================================
+// 16. (i) 守備隊形選択後に戦術カードが 3 枚（ブリッツ・ゾーンを含む）
+// ============================================================
+if (loadError === null) {
+  Math.random = () => 0;
+
+  // 前テスト(h)の続き: defCs は守備隊形カード 4 枚
+  // 先頭（ラン重視）をクリックして戦術カードへ
+  const defCs2 = cards();
+  if (defCs2.length === 4 && defCs2[0].onclick) defCs2[0].onclick(); // ラン重視
+
+  const tacCs = cards();
+  const tacHtml = tacCs.map(c => c._innerHTML || "");
+  const hasBlitz = tacHtml.some(h => h.includes("ブリッツ"));
+  const hasZone  = tacHtml.some(h => h.includes("ゾーン"));
+
+  assert(
+    "(i) 守備隊形クリック後、戦術カードが 3 枚（ブリッツ・ゾーンを含む）",
+    tacCs.length === 3 && hasBlitz && hasZone
+  );
+  if (tacCs.length !== 3 || !hasBlitz || !hasZone) {
+    console.log("  -> tacCs.length:", tacCs.length, "hasBlitz:", hasBlitz, "hasZone:", hasZone);
+    console.log("  -> cards HTML:", tacHtml.map(h => h.substring(0, 60)));
+  }
+}
+
+// ============================================================
+// 17. (j) 戦術選択後、結果が出て攻撃隊形カード or ゲーム終了
+// ============================================================
+if (loadError === null) {
+  Math.random = () => 0;
+
+  // 前テスト(i)の続き: tacCs は戦術カード 3 枚
+  // 先頭（通常）をクリックして resolveDefense
+  const tacCs2 = cards();
+  if (tacCs2.length === 3 && tacCs2[0].onclick) tacCs2[0].onclick(); // 通常
+  pump(60);
+
+  // resolveDefense 後: drive++ → chooseFormationUI (4 攻撃隊形カード) or gameOver (#start visible)
+  const afterCs = cards();
+  const startEl2 = getElementById("start");
+  const gameEndedJ = startEl2.style.display !== "none" &&
+                     startEl2._h1 &&
+                     startEl2._h1.textContent.includes("試合終了");
+  const offenseCardsShown = afterCs.length === 4 &&
+    afterCs.map(c => c._innerHTML || "").some(h => h.includes("ショットガン") || h.includes("シングルバック") || h.includes("アイ"));
+
+  assert(
+    "(j) 戦術クリック後、攻撃隊形カードが 4 枚 OR ゲーム終了画面が出る",
+    offenseCardsShown || gameEndedJ
+  );
+  if (!offenseCardsShown && !gameEndedJ) {
+    console.log("  -> afterCs.length:", afterCs.length, "gameEndedJ:", gameEndedJ);
+    console.log("  -> start.display:", startEl2.style.display, "h1:", startEl2._h1 ? startEl2._h1.textContent : "n/a");
+    console.log("  -> cards HTML:", afterCs.map(c => (c._innerHTML||"").substring(0, 60)));
+  }
+}
+
+// ============================================================
+// 18. 結果まとめ
 // ============================================================
 console.log("");
 console.log("=== テスト結果 ===");
