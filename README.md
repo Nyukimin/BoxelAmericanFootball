@@ -68,12 +68,41 @@ Three.js は CDN（cloudflare）から読み込むため、初回起動時はイ
 - 真上：トップビュー
 - 選手視点：低い位置からの臨場感ある視点
 
+## Netlify でのテスト／デプロイ
+
+[Netlify](https://www.netlify.com/) でホスティングしています。デプロイ設定は `netlify.toml` に定義済みです（公開ディレクトリはリポジトリのルート）。
+
+Netlify CLI を使うと、本番に反映する前にローカル確認とプレビュー（ドラフト）デプロイができます。CLI は未インストールでも `npx` 経由で実行できます。
+
+```bash
+# 1. ローカルでゲームを起動して動作確認（http://localhost:8888）
+npx netlify-cli dev
+
+# 2. Netlify にログイン（初回のみ。ブラウザが開きます）
+npx netlify-cli login
+
+# 3. このリポジトリを Netlify サイトに紐付け（初回のみ）
+npx netlify-cli link
+
+# 4. プレビュー（ドラフト）デプロイ：本番とは別の一時URLが発行され、テストに使えます
+npx netlify-cli deploy
+
+# 5. 問題なければ本番へ反映
+npx netlify-cli deploy --prod
+```
+
+GitHub と Netlify を連携している場合は、`main` への push で自動的に本番デプロイ、プルリクエストごとに Deploy Preview（テスト用URL）が作られます。
+
+なお `netlify.toml` の設定により、`docs/`（企画書など）は公開URLからはアクセスできません（`/docs/*` は常に 404 を返します）。
+
 ## プロジェクト構成
 
 ```
 .
-├── index.html   # ゲーム本体（HTML + CSS + JavaScript / Three.js）
-├── docs/        # 企画書などのドキュメント
+├── index.html    # ゲーム本体（HTML + CSS + JavaScript / Three.js）
+├── 404.html      # 公開サイトの「ページが見つかりません」ページ
+├── netlify.toml  # Netlify のデプロイ／ローカル開発設定
+├── docs/         # 企画書などのドキュメント（公開サイトからは非表示）
 └── README.md
 ```
 
