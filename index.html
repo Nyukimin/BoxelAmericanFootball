@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ボクセル・フットボール（試作）</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #bfe3f2; font-family: "Hiragino Maru Gothic ProN", "Yu Gothic", system-ui, sans-serif; }
+  #c { display: block; width: 100%; height: 100%; }
+  .hud { position: absolute; color: #fff; user-select: none; pointer-events: none; }
+  #info { top: 14px; left: 14px; }
+  .pill { background: rgba(36,48,24,.82); border-radius: 12px; padding: 8px 14px; display: inline-block; }
+  #downdist { font-size: 22px; font-weight: 700; }
+  #yardline { font-size: 13px; opacity: .85; margin-top: 2px; }
+  #score { top: 14px; left: 50%; transform: translateX(-50%); }
+  #score .sb { background: rgba(36,48,24,.82); border-radius: 12px; padding: 8px 18px; display: flex; align-items: center; gap: 12px; font-size: 14px; }
+  #score .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .home { color: #ffd166; } .away { color: #fff; }
+  #views { top: 14px; right: 14px; display: flex; gap: 6px; pointer-events: auto; }
+  #views button { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  #views button.on { background: #ee8e3c; border-color: #ee8e3c; }
+  #panel { bottom: 18px; left: 50%; transform: translateX(-50%); width: min(560px, 94vw); text-align: center; pointer-events: auto; }
+  .bubble { background: #fff; color: #2f5d2f; border-radius: 16px; padding: 10px 16px; font-size: 15px; line-height: 1.5; display: inline-block; max-width: 100%; box-shadow: 0 4px 0 rgba(0,0,0,.08); margin-bottom: 12px; }
+  .bubble b { color: #d9622b; }
+  .cards { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .card { background: #fff; border-radius: 14px; padding: 12px 10px; width: 124px; cursor: pointer; border: 3px solid transparent; transition: transform .08s, border-color .12s; box-shadow: 0 4px 0 rgba(0,0,0,.1); }
+  .card:hover { transform: translateY(-3px); border-color: #ffd166; }
+  .card .ico { font-size: 28px; }
+  .card .t { font-size: 15px; font-weight: 700; color: #2f4d22; margin-top: 2px; }
+  .card .d { font-size: 11px; color: #6b7d59; margin-top: 3px; line-height: 1.35; }
+  .big { display: inline-block; background: #ee8e3c; color: #fff; border: none; border-radius: 14px; padding: 13px 28px; font-size: 17px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 0 #b9651f; }
+  .big:active { transform: translateY(2px); box-shadow: 0 2px 0 #b9651f; }
+  #start { position: absolute; inset: 0; background: #bfe3f2; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; }
+  #start h1 { font-size: 34px; color: #2f6b3c; } #start p { color: #5a6b4a; margin: 8px 0 22px; font-size: 15px; }
+  #start .ball { font-size: 64px; }
+  .hint { font-size: 12px; opacity: .75; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="start">
+  <div class="ball">🏈</div>
+  <h1>ボクセル・フットボール</h1>
+  <p>監督として作戦を選ぼう。4回のチャンスで10ヤード進めばOK！</p>
+  <button class="big" id="startBtn">はじめる</button>
+</div>
+
+<div class="hud" id="info"><div class="pill"><div id="downdist">1st &amp; 10</div><div id="yardline">自陣30ヤード</div></div></div>
+<div class="hud" id="score"><div class="sb"><span>うちのチーム</span><span class="n home" id="homeS">0</span><span style="opacity:.5">—</span><span class="n away" id="awayS">0</span><span>あいて</span></div></div>
+<div class="hud" id="views">
+  <button data-v="quarter" class="on">俯瞰</button>
+  <button data-v="top">真上</button>
+  <button data-v="player">選手視点</button>
+</div>
+
+<div class="hud" id="panel">
+  <div class="bubble" id="bubble">ホイッスル先生：まずは隊形を選んでね！</div>
+  <div class="cards" id="cards"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  "use strict";
+  var TEAM_A = 0xee8e3c, TEAM_B = 0x3f7fd0;
+  var FUR = { owl:0xe7d4a8, rabbit:0xf6f0e6, squirrel:0xd38c50, bear:0xb58359, rhino:0xaeb7c1, dog:0xe3a55b, gen:0x8fa0b3 };
+
+  var scene, camera, renderer;
+  var ball, ballMarker, trail, trailPts = [];
+  var offense = [], defense = [], carrier = null, qb = null, rb = null, wr = null;
+  var clock;
+
+  var GOAL_NEAR = 10, GOAL_FAR = 110;
+  var state = {
+    los: 40, toGo: 10, down: 1, home: 0, away: 0,
+    phase: "formation", formation: null, play: null
+  };
+  var hintsShown = {};
+  var anim = null;
+  var view = "quarter";
+  var camPos = new THREE.Vector3(), camTarget = new THREE.Vector3();
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function rand(a, b) { return a + Math.random() * (b - a); }
+
+  function box(w, h, d, color, x, y, z) {
+    var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color: color }));
+    m.position.set(x || 0, y || 0, z || 0);
+    return m;
+  }
+
+  function makeAnimal(role, jersey, fur) {
+    var g = new THREE.Group();
+    g.add(box(1.2, 0.25, 0.9, 0x6b4a2f, -0.32, 0.13, 0));
+    g.add(box(1.2, 0.25, 0.9, 0x6b4a2f, 0.32, 0.13, 0));
+    var body = box(1.25, 1.05, 0.95, jersey, 0, 0.85, 0); g.add(body);
+    var head = box(1.0, 0.92, 0.92, fur, 0, 1.85, 0.04); g.add(head);
+    g.add(box(0.16, 0.16, 0.08, 0x222222, -0.22, 1.95, 0.5));
+    g.add(box(0.16, 0.16, 0.08, 0x222222, 0.22, 1.95, 0.5));
+    var hy = 2.4;
+    if (role === "owl") {
+      g.add(box(0.2, 0.34, 0.2, fur, -0.32, hy, 0));
+      g.add(box(0.2, 0.34, 0.2, fur, 0.32, hy, 0));
+      g.add(box(0.16, 0.16, 0.18, 0xf4a93c, 0, 1.78, 0.52));
+    } else if (role === "rabbit") {
+      g.add(box(0.2, 0.7, 0.18, fur, -0.24, hy + 0.18, 0));
+      g.add(box(0.2, 0.7, 0.18, fur, 0.24, hy + 0.18, 0));
+    } else if (role === "squirrel") {
+      g.add(box(0.3, 0.3, 0.3, fur, -0.38, hy - 0.05, 0));
+      g.add(box(0.3, 0.3, 0.3, fur, 0.38, hy - 0.05, 0));
+      g.add(box(0.45, 1.0, 0.45, fur, 0, 0.9, -0.8));
+    } else if (role === "bear") {
+      g.add(box(0.32, 0.32, 0.2, fur, -0.36, hy - 0.02, 0));
+      g.add(box(0.32, 0.32, 0.2, fur, 0.36, hy - 0.02, 0));
+    } else if (role === "rhino") {
+      g.add(box(0.2, 0.2, 0.18, fur, -0.36, hy - 0.05, 0));
+      g.add(box(0.2, 0.2, 0.18, fur, 0.36, hy - 0.05, 0));
+      g.add(box(0.16, 0.36, 0.16, 0xe6e0ce, 0, 1.95, 0.56));
+    } else if (role === "dog") {
+      g.add(box(0.24, 0.36, 0.18, fur, -0.34, hy, 0));
+      g.add(box(0.24, 0.36, 0.18, fur, 0.34, hy, 0));
+    } else {
+      g.add(box(0.28, 0.22, 0.2, fur, -0.34, hy - 0.06, 0));
+      g.add(box(0.28, 0.22, 0.2, fur, 0.34, hy - 0.06, 0));
+    }
+    g.scale.set(0.8, 0.8, 0.8);
+    g.userData.base = g.position.clone();
+    return g;
+  }
+
+  function makeBall() {
+    var g = new THREE.Group();
+    var b = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 12), new THREE.MeshLambertMaterial({ color: 0x8b5a2b }));
+    b.scale.set(1, 0.7, 0.62); g.add(b);
+    g.add(box(0.04, 0.5, 0.04, 0xffffff, 0, 0, 0));
+    return g;
+  }
+
+  function makeMarker() {
+    var g = new THREE.Group();
+    var ring = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.12, 8, 24), new THREE.MeshBasicMaterial({ color: 0xffe14d }));
+    ring.rotation.x = Math.PI / 2; ring.position.y = 3.2; g.add(ring);
+    var beam = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3, 8), new THREE.MeshBasicMaterial({ color: 0xffe14d, transparent: true, opacity: 0.5 }));
+    beam.position.y = 1.6; g.add(beam);
+    var arrow = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.6, 4), new THREE.MeshBasicMaterial({ color: 0xff8c1a }));
+    arrow.rotation.x = Math.PI; arrow.position.y = 2.4; g.userData = { arrow: arrow }; g.add(arrow);
+    g.userData.arrow = arrow;
+    return g;
+  }
+
+  function field() {
+    var g = new THREE.Group();
+    g.add(box(56, 0.2, 120, 0x4f9d4f, 0, 0, 60));
+    var ezA = box(56, 0.22, 10, 0xd9622b, 0, 0.01, 5); g.add(ezA);
+    var ezB = box(56, 0.22, 10, 0x3f7fd0, 0, 0.01, 115); g.add(ezB);
+    for (var y = 10; y <= 110; y += 5) {
+      var line = box(54, 0.24, 0.35, 0xffffff, 0, 0.02, y);
+      g.add(line);
+    }
+    for (var s = 0; s <= 120; s += 4) {
+      g.add(box(60, 0.2, 4, (Math.floor(s / 4) % 2 ? 0x4f9d4f : 0x55a755), 0, -0.01, s + 2));
+    }
+    return g;
+  }
+
+  function placeFormation(formation) {
+    var spread = [-9, -4.5, 0, 4.5, 9];
+    var roles = ["owl", "rabbit", "squirrel", "bear", "rhino"];
+    for (var i = 0; i < offense.length; i++) {
+      offense[i].position.set(spread[i], 0, state.los);
+      offense[i].rotation.y = 0;
+    }
+    qb = offense[0]; rb = offense[1]; wr = offense[2];
+    if (formation === "shotgun") { qb.position.set(0, 0, state.los - 6); wr.position.set(11, 0, state.los); }
+    else if (formation === "i") { qb.position.set(0, 0, state.los - 2.5); rb.position.set(0, 0, state.los - 6.5); }
+    else if (formation === "single") { qb.position.set(0, 0, state.los - 3); rb.position.set(0, 0, state.los - 6); wr.position.set(11, 0, state.los); }
+    else if (formation === "goal") { for (var k = 0; k < offense.length; k++) offense[k].position.set(spread[k] * 0.5, 0, state.los); qb.position.set(0, 0, state.los - 2); rb.position.set(0, 0, state.los - 4); }
+    for (var d = 0; d < defense.length; d++) { defense[d].position.set(spread[d], 0, state.los + 4 + (d % 2)); defense[d].rotation.y = Math.PI; }
+    setBall(qb.position.x, qb.position.z);
+  }
+
+  function setBall(x, z, y) { ball.position.set(x, y == null ? 1.4 : y, z); }
+
+  function outcome(formation, play) {
+    var r = Math.random(), y = 0, complete = true, turnover = false, msg = "";
+    if (play === "run") {
+      y = rand(1, 6); if (formation === "i" || formation === "goal") y += rand(1.5, 4);
+      if (r > 0.9) y += rand(8, 22);
+      msg = "ランで前進！";
+    } else if (play === "short") {
+      if (r < 0.18) { complete = false; y = 0; msg = "パス失敗…ドンマイ！"; }
+      else { y = rand(4, 9); if (formation === "shotgun" || formation === "single") y += rand(1, 3); msg = "ショートパス成功！"; }
+    } else {
+      if (r < 0.1) { turnover = true; y = 0; msg = "インターセプト！相手ボールに…"; }
+      else if (r < 0.5) { complete = false; y = 0; msg = "ロングパスは届かず…！"; }
+      else { y = rand(12, 30); if (formation === "shotgun") y += rand(2, 6); msg = "ロングパス成功！大きく前進！"; }
+    }
+    y = Math.round(y);
+    return { yards: y, complete: complete, turnover: turnover, msg: msg };
+  }
+
+  function startPlay(play) {
+    state.play = play;
+    var o = outcome(state.formation, play);
+    var startZ = state.los;
+    var endZ = Math.min(state.los + o.yards, GOAL_FAR);
+    o.endZ = endZ;
+    var dur, kind;
+    if (play === "run") { kind = "run"; dur = 1.0 + o.yards * 0.04; carrier = rb; }
+    else { kind = "pass"; dur = 0.9; carrier = wr; }
+    anim = { t: 0, dur: dur, kind: kind, o: o, startZ: startZ, endZ: endZ, phase: "move", catchZ: endZ };
+    if (kind === "pass") {
+      wr.position.z = state.los; wr.position.x = (state.formation === "shotgun" || state.formation === "single") ? 11 : 6;
+      anim.wrFromZ = wr.position.z; anim.wrFromX = wr.position.x;
+      anim.ballFrom = qb.position.clone();
+      anim.catchPos = new THREE.Vector3(o.complete ? lerp(anim.wrFromX, 2, 0.6) : anim.wrFromX, 1.4, o.complete ? endZ : Math.min(state.los + 12, endZ + 8));
+    }
+    state.phase = "animating";
+    setCards([]);
+    setBubble(state.formation.toUpperCase() + " で <b>" + playName(play) + "</b>！ スナップ！");
+  }
+
+  function finalize(o) {
+    var gained = Math.max(0, Math.round(ball.position.z - state.los));
+    if (o.turnover) {
+      setBubble("ホイッスル先生：" + o.msg + " 切り替えていこう！");
+      reset(true); return;
+    }
+    if (ball.position.z >= GOAL_FAR - 0.5) {
+      state.home += 7;
+      hint("td", "ホイッスル先生：<b>タッチダウン！</b> ゴールまで運べて6点＋キックで7点だよ！");
+      flashScore();
+      reset(true); return;
+    }
+    state.los = Math.round(ball.position.z);
+    state.toGo -= gained;
+    var note = o.msg + "（" + gained + "ヤード）";
+    if (state.toGo <= 0) {
+      state.down = 1; state.toGo = 10;
+      hint("first", "ホイッスル先生：" + note + " <b>ファーストダウン！</b> 10ヤード進めたから、また4回チャンスがもらえるよ！");
+    } else {
+      state.down += 1;
+      if (state.down > 4) {
+        setBubble("ホイッスル先生：" + note + " 4回で届かず、攻守交代。次はきっといける！");
+        reset(true); return;
+      }
+      var h = "ホイッスル先生：" + note + " 残り" + state.toGo + "ヤード。";
+      if (state.down === 4) hint("fourth", h + " <b>4回目</b>だよ！ここで決めないと攻撃交代。慎重にね。");
+      else setBubble(h + " " + ordinal(state.down) + "ダウン、いってみよう！");
+    }
+    nextPlayReady();
+  }
+
+  function reset(switchish) {
+    state.down = 1; state.toGo = 10; state.los = 40;
+    placeFormation(state.formation || "single");
+    setTimeout(function () { state.formation = null; state.phase = "formation"; updateHUD(); chooseFormationUI(); }, switchish ? 1600 : 0);
+  }
+
+  function nextPlayReady() {
+    updateHUD();
+    state.phase = "formation"; state.formation = null;
+    placeFormationLater();
+  }
+  function placeFormationLater() {
+    setTimeout(function () { chooseFormationUI(); }, 1300);
+  }
+
+  function ordinal(d) { return d === 1 ? "1st" : d === 2 ? "2nd" : d === 3 ? "3rd" : "4th"; }
+  function playName(p) { return p === "run" ? "ラン（走る）" : p === "short" ? "ショートパス" : "ロングパス"; }
+
+  function hint(key, text) {
+    if (!hintsShown[key]) { hintsShown[key] = true; setBubble(text); }
+    else setBubble(text.replace(/<b>|<\/b>/g, ""));
+  }
+  function setBubble(html) { document.getElementById("bubble").innerHTML = html; }
+
+  function setCards(arr) {
+    var c = document.getElementById("cards"); c.innerHTML = "";
+    arr.forEach(function (o) {
+      var d = document.createElement("div"); d.className = "card";
+      d.innerHTML = '<div class="ico">' + o.ico + '</div><div class="t">' + o.t + '</div><div class="d">' + o.d + '</div>';
+      d.onclick = o.fn; c.appendChild(d);
+    });
+  }
+
+  function chooseFormationUI() {
+    state.phase = "formation";
+    placeFormation("single");
+    setBubble("ホイッスル先生：まずは<b>隊形</b>を選んでね！");
+    setCards([
+      { ico: "🎯", t: "ショットガン", d: "後ろから構えてパス向き", fn: function () { pickFormation("shotgun"); } },
+      { ico: "💪", t: "アイ", d: "縦に並んで突進ラン向き", fn: function () { pickFormation("i"); } },
+      { ico: "⚖️", t: "シングルバック", d: "ラン・パス両対応の万能型", fn: function () { pickFormation("single"); } },
+      { ico: "🛡️", t: "ゴールライン", d: "密集してあと少しを押し込む", fn: function () { pickFormation("goal"); } }
+    ]);
+  }
+
+  function pickFormation(f) {
+    state.formation = f; placeFormation(f); state.phase = "play";
+    setBubble("<b>" + f.toUpperCase() + "</b> だね！ 次に<b>プレー</b>を選ぼう。");
+    setCards([
+      { ico: "🏃", t: "ラン", d: "走って前進。確実だが小さめ", fn: function () { startPlay("run"); } },
+      { ico: "✋", t: "ショートパス", d: "近くへ短く。成功しやすい", fn: function () { startPlay("short"); } },
+      { ico: "🎈", t: "ロングパス", d: "大きく前進。リスクも大きい", fn: function () { startPlay("long"); } }
+    ]);
+  }
+
+  function flashScore() {
+    var el = document.getElementById("homeS"); el.style.transform = "scale(1.5)";
+    setTimeout(function () { el.style.transform = "scale(1)"; }, 500);
+  }
+
+  function updateHUD() {
+    document.getElementById("downdist").textContent = ordinal(state.down) + " & " + Math.max(0, state.toGo);
+    var yl = Math.round(state.los - GOAL_NEAR);
+    var side = yl <= 50 ? "自陣" + yl : "敵陣" + (100 - yl);
+    document.getElementById("yardline").textContent = side + "ヤード";
+    document.getElementById("homeS").textContent = state.home;
+    document.getElementById("awayS").textContent = state.away;
+  }
+
+  function setView(v) {
+    view = v;
+    var bs = document.querySelectorAll("#views button");
+    bs.forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-v") === v); });
+  }
+
+  function updateCamera(dt) {
+    var focus = (state.phase === "animating") ? ball.position : new THREE.Vector3(0, 0, state.los + 6);
+    var off, look;
+    if (view === "top") { off = new THREE.Vector3(0, 78, -4); look = focus; }
+    else if (view === "player") { off = new THREE.Vector3(0, 7, -16); look = new THREE.Vector3(focus.x, 2, focus.z + 16); }
+    else { off = new THREE.Vector3(30, 38, -32); look = focus; }
+    var desired = focus.clone().add(off);
+    camPos.lerp(desired, 1 - Math.pow(0.001, dt));
+    camTarget.lerp(look, 1 - Math.pow(0.001, dt));
+    camera.position.copy(camPos); camera.lookAt(camTarget);
+  }
+
+  function updateAnim(dt) {
+    if (!anim) return;
+    anim.t += dt;
+    var p = Math.min(1, anim.t / anim.dur);
+    if (anim.kind === "run") {
+      var z = lerp(anim.startZ, anim.endZ, p);
+      carrier.position.z = z; carrier.position.y = Math.abs(Math.sin(p * 18)) * 0.25;
+      setBall(carrier.position.x, z + 0.3, 1.3);
+      for (var i = 0; i < defense.length; i++) {
+        defense[i].position.z = lerp(defense[i].userData.dz || defense[i].position.z, z + rand(-1, 2), 0.04);
+      }
+    } else {
+      var bp;
+      if (p < 0.78) {
+        var pp = p / 0.78;
+        bp = anim.ballFrom.clone().lerp(anim.catchPos, pp);
+        bp.y = lerp(anim.ballFrom.y, anim.catchPos.y, pp) + Math.sin(pp * Math.PI) * 7;
+        wr.position.x = lerp(anim.wrFromX, anim.catchPos.x, pp);
+        wr.position.z = lerp(anim.wrFromZ, anim.catchPos.z, pp);
+        wr.position.y = Math.abs(Math.sin(pp * 16)) * 0.2;
+        setBall(bp.x, bp.z, bp.y);
+      } else {
+        if (anim.o.complete) {
+          var pp2 = (p - 0.78) / 0.22;
+          var fz = lerp(anim.catchPos.z, anim.endZ, pp2);
+          wr.position.z = fz; wr.position.y = Math.abs(Math.sin(pp2 * 14)) * 0.2;
+          setBall(wr.position.x, fz + 0.3, 1.3);
+        } else {
+          setBall(anim.catchPos.x, anim.catchPos.z, Math.max(0.3, anim.catchPos.y - (p - 0.78) * 9));
+        }
+      }
+    }
+    if (p >= 1) { var o = anim.o; anim = null; setTimeout(function () { finalize(o); }, 350); }
+  }
+
+  function updateTrail() {
+    trailPts.push(ball.position.clone());
+    if (trailPts.length > 50) trailPts.shift();
+    var pos = trail.geometry.attributes.position.array;
+    for (var i = 0; i < 50; i++) {
+      var pt = trailPts[i] || trailPts[0] || ball.position;
+      pos[i * 3] = pt.x; pos[i * 3 + 1] = pt.y; pos[i * 3 + 2] = pt.z;
+    }
+    trail.geometry.attributes.position.needsUpdate = true;
+    trail.geometry.setDrawRange(0, trailPts.length);
+  }
+
+  function init() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xbfe3f2);
+    scene.fog = new THREE.Fog(0xbfe3f2, 80, 200);
+    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500);
+    renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("c"), antialias: true });
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+    var sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(20, 50, -10); scene.add(sun);
+    scene.add(field());
+
+    var roles = ["owl", "rabbit", "squirrel", "bear", "rhino"];
+    var furs = [FUR.owl, FUR.rabbit, FUR.squirrel, FUR.bear, FUR.rhino];
+    for (var i = 0; i < 5; i++) { var a = makeAnimal(roles[i], TEAM_A, furs[i]); offense.push(a); scene.add(a); }
+    for (var j = 0; j < 5; j++) { var b = makeAnimal("gen", TEAM_B, FUR.gen); defense.push(b); scene.add(b); }
+
+    ball = makeBall(); scene.add(ball);
+    ballMarker = makeMarker(); scene.add(ballMarker);
+
+    var tg = new THREE.BufferGeometry();
+    tg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(50 * 3), 3));
+    trail = new THREE.Line(tg, new THREE.LineBasicMaterial({ color: 0xffe14d, transparent: true, opacity: 0.7 }));
+    scene.add(trail);
+
+    placeFormation("single");
+    camPos.set(30, 38, state.los - 32); camTarget.set(0, 0, state.los);
+
+    document.querySelectorAll("#views button").forEach(function (b) {
+      b.onclick = function () { setView(b.getAttribute("data-v")); };
+    });
+    window.addEventListener("resize", function () {
+      camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    clock = new THREE.Clock();
+    updateHUD();
+    animate();
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    var dt = Math.min(0.05, clock.getDelta());
+    updateAnim(dt);
+    ballMarker.position.set(ball.position.x, ball.position.y, ball.position.z);
+    var t = clock.elapsedTime;
+    ballMarker.children[0].rotation.z = t * 2;
+    ballMarker.userData.arrow.position.y = 2.4 + Math.sin(t * 4) * 0.2;
+    ball.rotation.z += dt * 4;
+    updateTrail();
+    updateCamera(dt);
+    renderer.render(scene, camera);
+  }
+
+  document.getElementById("startBtn").onclick = function () {
+    document.getElementById("start").style.display = "none";
+    chooseFormationUI();
+  };
+  init();
+})();
+</script>
+</body>
+</html>
