@@ -72,9 +72,9 @@
   var offense = [], defense = [], carrier = null, qb = null, rb = null, wr = null;
   var clock;
 
-  var GOAL_NEAR = 10, GOAL_FAR = 110;
+  var GOAL_NEAR = 10, GOAL_FAR = 110, MAX_DRIVES = 6;
   var state = {
-    los: 40, toGo: 10, down: 1, home: 0, away: 0,
+    los: 40, toGo: 10, down: 1, home: 0, away: 0, drive: 0,
     phase: "formation", formation: null, play: null, taped: null
   };
   var hintsShown = {};
@@ -86,6 +86,9 @@
   function lerp(a, b, t) { return a + (b - a) * t; }
   function rand(a, b) { return a + Math.random() * (b - a); }
   function byRole(r) { for (var i = 0; i < offense.length; i++) { if (offense[i].userData.role === r) return offense[i]; } return null; }
+  function statOf(p, key) { return (p && p.userData && p.userData.stats && p.userData.stats[key]) || 6; }
+  function teamStat(list, role, key) { var s = 0, n = 0; list.forEach(function (p) { if (p.userData.role === role) { s += statOf(p, key); n++; } }); return n ? s / n : 6; }
+  function bestKicker() { var b = offense[0], bv = -1; offense.forEach(function (p) { var k = statOf(p, "kick"); if (k > bv) { bv = k; b = p; } }); return b; }
 
   function box(w, h, d, color, x, y, z) {
     var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color: color }));
@@ -151,22 +154,31 @@
     var taped = state.taped;
     var runHurt = taped && (taped.role === "RB" || taped.role === "OL");
     var passHurt = taped && (taped.role === "QB" || taped.role === "WR");
+    // 能力（6が平均=係数1.0）
+    var spd = statOf(rb, "speed") / 6;                 // ランの速さ・ブレイク
+    var pwr = teamStat(offense, "OL", "power") / 6;    // ラインの押し込み
+    var cat = statOf(wr, "catch") / 6;                 // 捕球（落球しにくさ）
+    var wrSpd = statOf(wr, "speed") / 6;               // 受けた後の伸び（YAC）
     if (play === "run") {
-      y = rand(1, 6); if (formation === "i" || formation === "goal") y += rand(1.5, 4);
-      if (r > 0.9) y += rand(8, 22);
+      y = rand(1, 5) * (0.7 + 0.3 * pwr);
+      if (formation === "i" || formation === "goal") y += rand(1.5, 4) * pwr;
+      if (r > (1 - 0.10 * spd)) y += rand(8, 22) * spd;          // 速いほどブレイク
+      if (Math.random() < 0.12 / pwr) y -= rand(2, 5);          // 弱いと止められる
       if (runHurt) y *= 0.55;
       msg = "ランで前進！";
     } else if (play === "short") {
-      var failT = passHurt ? 0.38 : 0.18;
-      if (r < failT) { complete = false; y = 0; msg = "パス失敗…ドンマイ！"; }
-      else { y = rand(4, 9); if (formation === "shotgun" || formation === "single") y += rand(1, 3); if (passHurt) y *= 0.7; msg = "ショートパス成功！"; }
+      var dropS = 0.16 / cat;                                   // 捕球低いほど落球
+      var failT = (passHurt ? 0.30 : 0.10) + dropS;
+      if (r < failT) { complete = false; y = 0; msg = (r < dropS ? "あっ、落球…！" : "パス失敗…ドンマイ！"); }
+      else { y = rand(4, 8) + rand(0, 3) * wrSpd; if (formation === "shotgun" || formation === "single") y += rand(1, 3); if (passHurt) y *= 0.7; msg = "ショートパス成功！"; }
     } else {
-      var intT = passHurt ? 0.16 : 0.1, missT = passHurt ? 0.62 : 0.5;
+      var dropL = 0.14 / cat;
+      var intT = passHurt ? 0.16 : 0.1, missT = (passHurt ? 0.55 : 0.42) + dropL;
       if (r < intT) { turnover = true; y = 0; msg = "インターセプト！相手ボールに…"; }
-      else if (r < missT) { complete = false; y = 0; msg = "ロングパスは届かず…！"; }
-      else { y = rand(12, 30); if (formation === "shotgun") y += rand(2, 6); if (passHurt) y *= 0.7; msg = "ロングパス成功！大きく前進！"; }
+      else if (r < missT) { complete = false; y = 0; msg = (r < intT + dropL ? "あぁ落球…！" : "ロングパスは届かず…！"); }
+      else { y = rand(12, 26) + rand(0, 8) * wrSpd; if (formation === "shotgun") y += rand(2, 6); if (passHurt) y *= 0.7; msg = "ロングパス成功！大きく前進！"; }
     }
-    y = Math.round(y);
+    y = Math.round(Math.max(0, y));
     return { yards: y, complete: complete, turnover: turnover, msg: msg };
   }
 
@@ -196,13 +208,13 @@
     var gained = Math.max(0, Math.round(ball.position.z - state.los));
     if (o.turnover) {
       setBubble("ホイッスル先生：" + o.msg + " 切り替えていこう！");
-      reset(true); return;
+      endPossession(0); return;
     }
     if (ball.position.z >= GOAL_FAR - 0.5) {
       state.home += 7;
       hint("td", "ホイッスル先生：<b>タッチダウン！</b> ゴールまで運べて6点＋キックで7点だよ！");
       flashScore();
-      reset(true); return;
+      endPossession(0.1); return;
     }
     state.los = Math.round(ball.position.z);
     state.toGo -= gained;
@@ -214,19 +226,58 @@
       state.down += 1;
       if (state.down > 4) {
         setBubble("ホイッスル先生：" + note + " 4回で届かず、攻守交代。次はきっといける！");
-        reset(true); return;
+        endPossession(0); return;
       }
       var h = "ホイッスル先生：" + note + " 残り" + state.toGo + "ヤード。";
-      if (state.down === 4) hint("fourth", h + " <b>4回目</b>だよ！ここで決めないと攻撃交代。慎重にね。");
+      if (state.down === 4) hint("fourth", h + " <b>4回目</b>！ 行く？ キック（FG/パント）も選べるよ。");
       else setBubble(h + " " + ordinal(state.down) + "ダウン、いってみよう！");
     }
     nextPlayReady();
   }
 
-  function reset(switchish) {
-    state.down = 1; state.toGo = 10; state.los = 40;
-    placeFormation(state.formation || "single");
-    setTimeout(function () { state.formation = null; state.phase = "formation"; updateHUD(); chooseFormationUI(); }, switchish ? 1600 : 0);
+  // 相手の攻撃を簡易シミュレート（フィールド位置で得点確率が変わる）
+  function opponentPossession(pinBonus) {
+    var goodness = Math.max(0, Math.min(1, 1 - (state.los - GOAL_NEAR) / 100 - (pinBonus || 0)));
+    var r = Math.random();
+    var tdC = 0.12 + 0.30 * goodness, fgC = tdC + 0.18 + 0.15 * goodness;
+    if (r < tdC) { state.away += 7; return "相手にタッチダウンされた…！"; }
+    if (r < fgC) { state.away += 3; return "相手にフィールドゴールを決められた。"; }
+    return "守備陣がストップ！ ナイスディフェンス！";
+  }
+
+  // 攻守交代：相手の攻撃→自分の攻撃に戻す（規定シリーズで試合終了）
+  function endPossession(pinBonus) {
+    state.drive += 1;
+    state.phase = "animating";
+    var oppMsg = opponentPossession(pinBonus);
+    updateHUD();
+    setTimeout(function () {
+      setBubble("ホイッスル先生：" + oppMsg);
+      flashScore();
+      setTimeout(function () {
+        if (state.drive >= MAX_DRIVES) { gameOver(); return; }
+        recoverTape();
+        state.down = 1; state.toGo = 10; state.los = 40; state.formation = null; state.phase = "formation";
+        placeFormation("single"); updateHUD(); chooseFormationUI();
+      }, 1800);
+    }, 800);
+  }
+
+  function gameOver() {
+    var s = document.getElementById("start");
+    var res = state.home > state.away ? "勝ち！" : state.home < state.away ? "負け…" : "引き分け";
+    s.querySelector("h1").textContent = "試合終了：" + res;
+    s.querySelector("p").textContent = "うちのチーム " + state.home + " ― " + state.away + " あいて";
+    document.getElementById("startBtn").textContent = "もう一度あそぶ";
+    s.style.display = "flex";
+  }
+
+  function resetGame() {
+    recoverTape();
+    state.home = 0; state.away = 0; state.drive = 0;
+    state.down = 1; state.toGo = 10; state.los = 40; state.formation = null; state.phase = "formation";
+    hintsShown = {};
+    updateHUD(); chooseFormationUI();
   }
 
   function nextPlayReady() {
@@ -303,11 +354,41 @@
   function pickFormation(f) {
     state.formation = f; placeFormation(f); state.phase = "play";
     setBubble("<b>" + f.toUpperCase() + "</b> だね！ 次に<b>プレー</b>を選ぼう。");
-    setCards([
+    var cards = [
       { ico: "🏃", t: "ラン", d: "走って前進。確実だが小さめ", fn: function () { startPlay("run"); } },
       { ico: "✋", t: "ショートパス", d: "近くへ短く。成功しやすい", fn: function () { startPlay("short"); } },
       { ico: "🎈", t: "ロングパス", d: "大きく前進。リスクも大きい", fn: function () { startPlay("long"); } }
-    ]);
+    ];
+    if (state.down === 4) {
+      cards.push({ ico: "🥅", t: "フィールドゴール", d: "成功で3点。近いほど決まる", fn: function () { kickPlay("fg"); } });
+      cards.push({ ico: "👟", t: "パント", d: "相手を深い位置に。攻守交代", fn: function () { kickPlay("punt"); } });
+    }
+    setCards(cards);
+  }
+
+  // キック（フィールドゴール／パント）。成否はキッカーの kick 力と距離で決まる
+  function kickPlay(type) {
+    state.phase = "animating"; setCards([]);
+    var kicker = byRole("P") || bestKicker();
+    var kf = statOf(kicker, "kick") / 6;
+    var who = kicker.userData.name || "キッカー";
+    if (type === "fg") {
+      var dist = Math.round((GOAL_FAR - state.los) + 17);
+      var prob = Math.min(0.95, Math.max(0.1, (1.15 - dist * 0.012) * kf));
+      var ok = Math.random() < prob;
+      setBubble(who + " が " + dist + "ヤードのフィールドゴールを狙う…！");
+      setTimeout(function () {
+        if (ok) { state.home += 3; setBubble("ホイッスル先生：<b>成功！ 3点</b>！ ナイスキック！"); flashScore(); endPossession(0.1); }
+        else { setBubble("ホイッスル先生：<b>失敗…</b> 惜しい！ 相手ボールへ。"); endPossession(0); }
+      }, 1100);
+    } else {
+      var dpunt = rand(30, 45) * (0.8 + 0.2 * kf);
+      setBubble(who + " がパント！ ボールが高く飛ぶ…");
+      setTimeout(function () {
+        setBubble("ホイッスル先生：相手を深い位置に押し込んだ！");
+        endPossession(Math.min(0.45, dpunt / 100));
+      }, 1000);
+    }
   }
 
   function flashScore() {
@@ -319,7 +400,7 @@
     document.getElementById("downdist").textContent = ordinal(state.down) + " & " + Math.max(0, state.toGo);
     var yl = Math.round(state.los - GOAL_NEAR);
     var side = yl <= 50 ? "自陣" + yl : "敵陣" + (100 - yl);
-    document.getElementById("yardline").textContent = side + "ヤード";
+    document.getElementById("yardline").textContent = side + "ヤード ・ シリーズ " + Math.min(state.drive + 1, MAX_DRIVES) + "/" + MAX_DRIVES;
     document.getElementById("homeS").textContent = state.home;
     document.getElementById("awayS").textContent = state.away;
   }
@@ -453,7 +534,7 @@
 
   document.getElementById("startBtn").onclick = function () {
     document.getElementById("start").style.display = "none";
-    chooseFormationUI();
+    resetGame();
   };
   init();
 })();
