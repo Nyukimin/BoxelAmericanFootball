@@ -1,0 +1,220 @@
+/**
+ * gamelogic.js - BoxelAmericanFootball 純粋数値ロジック
+ * window.BoxelGame として公開する（characters.js の window.BoxelChars と同じ流儀）。
+ * 描画・DOM・THREE には一切依存しない。
+ */
+(function () {
+  "use strict";
+
+  /**
+   * プレー結果を計算する。
+   * @param {string} formation "shotgun"|"i"|"single"|"goal"
+   * @param {string} play "run"|"short"|"long"
+   * @param {object} ctx
+   *   ctx.rbSpeed   {number} 1-10 (RB の speed stat)
+   *   ctx.olPower   {number} 1-10 (OL の power stat 平均)
+   *   ctx.wrCatch   {number} 1-10 (WR の catch stat)
+   *   ctx.wrSpeed   {number} 1-10 (WR の speed stat)
+   *   ctx.tapedRole {string|null} "QB"|"RB"|"WR"|"OL"|null
+   * @returns {{ yards:number, complete:boolean, turnover:boolean, msg:string }}
+   */
+  function outcome(formation, play, ctx) {
+    var rbSpeed  = (ctx && ctx.rbSpeed  != null) ? ctx.rbSpeed  : 6;
+    var olPower  = (ctx && ctx.olPower  != null) ? ctx.olPower  : 6;
+    var wrCatch  = (ctx && ctx.wrCatch  != null) ? ctx.wrCatch  : 6;
+    var wrSpeed  = (ctx && ctx.wrSpeed  != null) ? ctx.wrSpeed  : 6;
+    var tapedRole = (ctx && ctx.tapedRole) ? ctx.tapedRole : null;
+
+    var r = Math.random(), y = 0, complete = true, turnover = false, msg = "";
+    var runHurt  = tapedRole === "RB" || tapedRole === "OL";
+    var passHurt = tapedRole === "QB" || tapedRole === "WR";
+
+    // 能力（6が平均=係数1.0）
+    var spd   = rbSpeed  / 6;
+    var pwr   = olPower  / 6;
+    var cat   = wrCatch  / 6;
+    var wrSpd = wrSpeed  / 6;
+
+    function rand(a, b) { return a + Math.random() * (b - a); }
+
+    if (play === "run") {
+      y = rand(1, 5) * (0.7 + 0.3 * pwr);
+      if (formation === "i" || formation === "goal") y += rand(1.5, 4) * pwr;
+      if (r > (1 - 0.10 * spd)) y += rand(8, 22) * spd;   // 速いほどブレイク
+      if (Math.random() < 0.12 / pwr) y -= rand(2, 5);     // 弱いと止められる
+      if (runHurt) y *= 0.55;
+      msg = "ランで前進！";
+    } else if (play === "short") {
+      var dropS = 0.16 / cat;                               // 捕球低いほど落球
+      var failT = (passHurt ? 0.30 : 0.10) + dropS;
+      if (r < failT) {
+        complete = false; y = 0;
+        msg = (r < dropS ? "あっ、落球…！" : "パス失敗…ドンマイ！");
+      } else {
+        y = rand(4, 8) + rand(0, 3) * wrSpd;
+        if (formation === "shotgun" || formation === "single") y += rand(1, 3);
+        if (passHurt) y *= 0.7;
+        msg = "ショートパス成功！";
+      }
+    } else {
+      // long
+      var dropL = 0.14 / cat;
+      var intT  = passHurt ? 0.16 : 0.1;
+      var missT = (passHurt ? 0.55 : 0.42) + dropL;
+      if (r < intT) {
+        turnover = true; y = 0; msg = "インターセプト！相手ボールに…";
+      } else if (r < missT) {
+        complete = false; y = 0;
+        msg = (r < intT + dropL ? "あぁ落球…！" : "ロングパスは届かず…！");
+      } else {
+        y = rand(12, 26) + rand(0, 8) * wrSpd;
+        if (formation === "shotgun") y += rand(2, 6);
+        if (passHurt) y *= 0.7;
+        msg = "ロングパス成功！大きく前進！";
+      }
+    }
+    y = Math.round(Math.max(0, y));
+    return { yards: y, complete: complete, turnover: turnover, msg: msg };
+  }
+
+  /**
+   * 相手チームの攻撃をシミュレートして得点を返す（副作用なし）。
+   * @param {number} los       自チームの LOS（フィールド座標値、通常 10-110）
+   * @param {number} pinBonus  パントで押し込んだ際のボーナス（0 〜 0.45 程度）
+   * @returns {{ points: 0|3|7, msg: string }}
+   */
+  function opponentDrive(los, pinBonus) {
+    var GOAL_NEAR = 10;
+    var goodness = Math.max(0, Math.min(1, 1 - (los - GOAL_NEAR) / 100 - (pinBonus || 0)));
+    var r = Math.random();
+    var tdC = 0.12 + 0.30 * goodness;
+    var fgC = tdC + 0.18 + 0.15 * goodness;
+    if (r < tdC) return { points: 7, msg: "相手にタッチダウンされた…！" };
+    if (r < fgC) return { points: 3, msg: "相手にフィールドゴールを決められた。" };
+    return { points: 0, msg: "守備陣がストップ！ ナイスディフェンス！" };
+  }
+
+  /**
+   * フィールドゴール成功確率を返す。
+   * @param {number} los      現在の LOS（フィールド座標値）
+   * @param {number} kickStat キッカーの kick stat (1-10)
+   * @returns {number} 確率 [0.1, 0.95]
+   */
+  function fgProbability(los, kickStat) {
+    var GOAL_FAR = 110;
+    var dist = Math.round((GOAL_FAR - los) + 17);
+    var kf   = kickStat / 6;
+    return Math.min(0.95, Math.max(0.1, (1.15 - dist * 0.012) * kf));
+  }
+
+  /**
+   * FGミニゲーム: 左右アップライトへの方位角ウィンドウを返す。
+   * @param {number} xb ボールの横位置（ハッシュ相当、[-6,6] 程度）
+   * @param {number} zb ボールの縦位置（LOS、フィールド座標）
+   * @returns {{ left: number, right: number }} 方位角ラジアン。left < right が保証される。
+   */
+  function fgAngleWindow(xb, zb) {
+    var left  = Math.atan2(-3 - xb, 120 - zb);
+    var right = Math.atan2( 3 - xb, 120 - zb);
+    return { left: left, right: right };
+  }
+
+  /**
+   * FGミニゲーム: フルパワーで届く距離を返す。
+   * @param {number} kickStat キッカーの kick stat (1-10)
+   * @returns {number} 到達距離（ヤード換算）
+   */
+  function fgReach(kickStat) {
+    return 35 + 4 * kickStat;
+  }
+
+  /**
+   * FGミニゲーム: 角度メーターの可動域を返す。
+   * @param {number} xb ボールの横位置
+   * @param {number} zb ボールの縦位置（LOS）
+   * @returns {{ center: number, half: number }} center=ゴール中心への角度(rad)、half=可動域の半分(rad)
+   */
+  function fgAimSwing(xb, zb) {
+    var center = Math.atan2(-xb, 120 - zb);
+    return { center: center, half: 0.28 };
+  }
+
+  /**
+   * FGミニゲーム: 狙い・パワーからキック成否を判定する（純粋関数）。
+   * @param {object} opts
+   *   opts.aim      {number} 狙い角度(rad)
+   *   opts.power    {number} パワー [0,1]
+   *   opts.xb       {number} ボールの横位置
+   *   opts.zb       {number} ボールの縦位置（LOS）
+   *   opts.kickStat {number} キッカーの kick stat (1-10)
+   * @returns {{ success: boolean, reason: "good"|"wideLeft"|"wideRight"|"short" }}
+   */
+  function fgResolve(opts) {
+    var aim      = opts.aim;
+    var power    = opts.power;
+    var xb       = opts.xb;
+    var zb       = opts.zb;
+    var kickStat = opts.kickStat;
+
+    // 飛距離チェック
+    var dist   = (120 - zb) + 17;
+    var needed = dist / fgReach(kickStat);
+    if (power < needed) {
+      return { success: false, reason: "short" };
+    }
+
+    // 左右チェック
+    var win = fgAngleWindow(xb, zb);
+    var tol = 0.01 * (kickStat / 6);
+    if (aim < win.left - tol) {
+      return { success: false, reason: "wideLeft" };
+    }
+    if (aim > win.right + tol) {
+      return { success: false, reason: "wideRight" };
+    }
+
+    return { success: true, reason: "good" };
+  }
+
+  /**
+   * ファンブル発生確率を返す（純粋関数・乱数不使用）。
+   * @param {number} power    ボールキャリアの power stat (1-10)
+   * @param {number} baseRate 基準確率（省略時 0.045）
+   * @returns {number} 確率 [0.015, 0.10]
+   */
+  function fumbleProbability(power, baseRate) {
+    var base = (baseRate != null) ? baseRate : 0.045;
+    var p = base * (6 / power);
+    return Math.min(0.10, Math.max(0.015, p));
+  }
+
+  /**
+   * ファンブル判定を行う（乱数使用）。
+   * @param {object} opts
+   *   opts.power              {number} ボールキャリアの power stat (1-10)
+   *   opts.baseRate           {number} 基準確率（省略時 0.045）
+   *   opts.opponentRecoverRate {number} 相手リカバー率（省略時 0.5）
+   * @returns {{ fumble: boolean, lostToOpponent: boolean }}
+   */
+  function fumbleCheck(opts) {
+    var power               = (opts && opts.power               != null) ? opts.power               : 6;
+    var baseRate            = (opts && opts.baseRate            != null) ? opts.baseRate            : 0.045;
+    var opponentRecoverRate = (opts && opts.opponentRecoverRate != null) ? opts.opponentRecoverRate : 0.5;
+
+    var fumble = Math.random() < fumbleProbability(power, baseRate);
+    var lostToOpponent = fumble && (Math.random() < opponentRecoverRate);
+    return { fumble: fumble, lostToOpponent: lostToOpponent };
+  }
+
+  window.BoxelGame = {
+    outcome: outcome,
+    opponentDrive: opponentDrive,
+    fgProbability: fgProbability,
+    fgAngleWindow: fgAngleWindow,
+    fgReach: fgReach,
+    fgAimSwing: fgAimSwing,
+    fgResolve: fgResolve,
+    fumbleProbability: fumbleProbability,
+    fumbleCheck: fumbleCheck
+  };
+})();

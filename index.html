@@ -62,6 +62,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="characters.js"></script>
+<script src="gamelogic.js"></script>
 <script>
 (function () {
   "use strict";
@@ -150,36 +151,14 @@
   function setBall(x, z, y) { ball.position.set(x, y == null ? 1.4 : y, z); }
 
   function outcome(formation, play) {
-    var r = Math.random(), y = 0, complete = true, turnover = false, msg = "";
-    var taped = state.taped;
-    var runHurt = taped && (taped.role === "RB" || taped.role === "OL");
-    var passHurt = taped && (taped.role === "QB" || taped.role === "WR");
-    // 能力（6が平均=係数1.0）
-    var spd = statOf(rb, "speed") / 6;                 // ランの速さ・ブレイク
-    var pwr = teamStat(offense, "OL", "power") / 6;    // ラインの押し込み
-    var cat = statOf(wr, "catch") / 6;                 // 捕球（落球しにくさ）
-    var wrSpd = statOf(wr, "speed") / 6;               // 受けた後の伸び（YAC）
-    if (play === "run") {
-      y = rand(1, 5) * (0.7 + 0.3 * pwr);
-      if (formation === "i" || formation === "goal") y += rand(1.5, 4) * pwr;
-      if (r > (1 - 0.10 * spd)) y += rand(8, 22) * spd;          // 速いほどブレイク
-      if (Math.random() < 0.12 / pwr) y -= rand(2, 5);          // 弱いと止められる
-      if (runHurt) y *= 0.55;
-      msg = "ランで前進！";
-    } else if (play === "short") {
-      var dropS = 0.16 / cat;                                   // 捕球低いほど落球
-      var failT = (passHurt ? 0.30 : 0.10) + dropS;
-      if (r < failT) { complete = false; y = 0; msg = (r < dropS ? "あっ、落球…！" : "パス失敗…ドンマイ！"); }
-      else { y = rand(4, 8) + rand(0, 3) * wrSpd; if (formation === "shotgun" || formation === "single") y += rand(1, 3); if (passHurt) y *= 0.7; msg = "ショートパス成功！"; }
-    } else {
-      var dropL = 0.14 / cat;
-      var intT = passHurt ? 0.16 : 0.1, missT = (passHurt ? 0.55 : 0.42) + dropL;
-      if (r < intT) { turnover = true; y = 0; msg = "インターセプト！相手ボールに…"; }
-      else if (r < missT) { complete = false; y = 0; msg = (r < intT + dropL ? "あぁ落球…！" : "ロングパスは届かず…！"); }
-      else { y = rand(12, 26) + rand(0, 8) * wrSpd; if (formation === "shotgun") y += rand(2, 6); if (passHurt) y *= 0.7; msg = "ロングパス成功！大きく前進！"; }
-    }
-    y = Math.round(Math.max(0, y));
-    return { yards: y, complete: complete, turnover: turnover, msg: msg };
+    var ctx = {
+      rbSpeed:  statOf(rb, "speed"),
+      olPower:  teamStat(offense, "OL", "power"),
+      wrCatch:  statOf(wr, "catch"),
+      wrSpeed:  statOf(wr, "speed"),
+      tapedRole: state.taped ? state.taped.role : null
+    };
+    return window.BoxelGame.outcome(formation, play, ctx);
   }
 
   function startPlay(play) {
@@ -237,12 +216,9 @@
 
   // 相手の攻撃を簡易シミュレート（フィールド位置で得点確率が変わる）
   function opponentPossession(pinBonus) {
-    var goodness = Math.max(0, Math.min(1, 1 - (state.los - GOAL_NEAR) / 100 - (pinBonus || 0)));
-    var r = Math.random();
-    var tdC = 0.12 + 0.30 * goodness, fgC = tdC + 0.18 + 0.15 * goodness;
-    if (r < tdC) { state.away += 7; return "相手にタッチダウンされた…！"; }
-    if (r < fgC) { state.away += 3; return "相手にフィールドゴールを決められた。"; }
-    return "守備陣がストップ！ ナイスディフェンス！";
+    var res = window.BoxelGame.opponentDrive(state.los, pinBonus);
+    state.away += res.points;
+    return res.msg;
   }
 
   // 攻守交代：相手の攻撃→自分の攻撃に戻す（規定シリーズで試合終了）
@@ -374,7 +350,7 @@
     var who = kicker.userData.name || "キッカー";
     if (type === "fg") {
       var dist = Math.round((GOAL_FAR - state.los) + 17);
-      var prob = Math.min(0.95, Math.max(0.1, (1.15 - dist * 0.012) * kf));
+      var prob = window.BoxelGame.fgProbability(state.los, statOf(kicker, "kick"));
       var ok = Math.random() < prob;
       setBubble(who + " が " + dist + "ヤードのフィールドゴールを狙う…！");
       setTimeout(function () {

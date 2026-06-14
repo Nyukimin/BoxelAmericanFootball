@@ -1,0 +1,134 @@
+/**
+ * tests/gamelogic.test.mjs
+ * Node で実行する純粋ロジックテスト。
+ * 全件 [OK] なら 0 終了、失敗があれば 1 終了。
+ */
+import { readFileSync } from "fs";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// gamelogic.js は window.BoxelGame を設定するので global.window を準備する
+global.window = global;
+
+// gamelogic.js を Function で評価して window.BoxelGame を得る
+const code = readFileSync(resolve(__dirname, "../gamelogic.js"), "utf8");
+new Function(code)();
+
+const BG = global.window.BoxelGame;
+
+let failed = 0;
+
+function assert(label, condition) {
+  if (condition) {
+    console.log("[OK] " + label);
+  } else {
+    console.error("[NG] " + label);
+    failed++;
+  }
+}
+
+// ------------------------------------------------------------
+// ユーティリティ
+// ------------------------------------------------------------
+
+/**
+ * N 回試行して平均ヤードを返す。
+ */
+function avgYards(formation, play, ctx, N) {
+  var total = 0;
+  for (var i = 0; i < N; i++) {
+    total += BG.outcome(formation, play, ctx).yards;
+  }
+  return total / N;
+}
+
+/**
+ * N 回試行してショートパス成功率を返す。
+ */
+function shortCompleteRate(ctx, N) {
+  var ok = 0;
+  for (var i = 0; i < N; i++) {
+    if (BG.outcome("single", "short", ctx).complete) ok++;
+  }
+  return ok / N;
+}
+
+const N = 100000;
+
+// ------------------------------------------------------------
+// 1. ランプレー: speed 高 → 平均ヤード↑
+// ------------------------------------------------------------
+var runLow  = avgYards("single", "run", { rbSpeed: 4, olPower: 6, wrCatch: 6, wrSpeed: 6, tapedRole: null }, N);
+var runHigh = avgYards("single", "run", { rbSpeed: 9, olPower: 6, wrCatch: 6, wrSpeed: 6, tapedRole: null }, N);
+assert("ラン: rbSpeed=9 の平均ヤード > rbSpeed=4 の平均ヤード", runHigh > runLow);
+
+// ------------------------------------------------------------
+// 2. ショートパス: catch 低 → 成功率↓、かつ catch=4 で 95% 未満
+// ------------------------------------------------------------
+var catchLow  = shortCompleteRate({ rbSpeed: 6, olPower: 6, wrCatch: 4, wrSpeed: 6, tapedRole: null }, N);
+var catchHigh = shortCompleteRate({ rbSpeed: 6, olPower: 6, wrCatch: 9, wrSpeed: 6, tapedRole: null }, N);
+assert("ショートパス: wrCatch=9 の成功率 > wrCatch=4 の成功率", catchHigh > catchLow);
+assert("ショートパス: wrCatch=4 の成功率 < 0.95", catchLow < 0.95);
+
+// ------------------------------------------------------------
+// 3. ランプレー: OL power 高 → 平均ヤード↑
+// ------------------------------------------------------------
+var runPwrLow  = avgYards("single", "run", { rbSpeed: 6, olPower: 3, wrCatch: 6, wrSpeed: 6, tapedRole: null }, N);
+var runPwrHigh = avgYards("single", "run", { rbSpeed: 6, olPower: 9, wrCatch: 6, wrSpeed: 6, tapedRole: null }, N);
+assert("ラン: olPower=9 の平均ヤード > olPower=3 の平均ヤード", runPwrHigh > runPwrLow);
+
+// ------------------------------------------------------------
+// 4. fgProbability
+// ------------------------------------------------------------
+// 近距離(los大) > 遠距離(los小)
+var fgNear = BG.fgProbability(90, 6);   // dist = (110-90)+17 = 37
+var fgFar  = BG.fgProbability(40, 6);   // dist = (110-40)+17 = 87
+assert("FG: 近距離(los=90) の確率 > 遠距離(los=40) の確率", fgNear > fgFar);
+
+// kick 高 > kick 低
+var fgKickHigh = BG.fgProbability(60, 9);
+var fgKickLow  = BG.fgProbability(60, 3);
+assert("FG: kickStat=9 の確率 > kickStat=3 の確率", fgKickHigh > fgKickLow);
+
+// 遠距離(los=20)は 0.6 未満
+var fgVeryFar = BG.fgProbability(20, 6);  // dist = (110-20)+17 = 107
+assert("FG: 遠距離(los=20) の確率 < 0.6", fgVeryFar < 0.6);
+
+// 戻り値が [0.1, 0.95] に収まる
+assert("FG: fgProbability は 0.1 以上", fgNear >= 0.1 && fgFar >= 0.1);
+assert("FG: fgProbability は 0.95 以下", fgNear <= 0.95 && fgFar <= 0.95);
+
+// ------------------------------------------------------------
+// 5. opponentDrive: los 小(自陣) → 得点率↑、pinBonus で抑制
+// ------------------------------------------------------------
+var M = N;
+
+function drivePoints(los, pinBonus) {
+  var total = 0;
+  for (var i = 0; i < M; i++) {
+    total += BG.opponentDrive(los, pinBonus).points;
+  }
+  return total / M;  // 平均得点（0/3/7）
+}
+
+var ptsSelfSide  = drivePoints(20, 0);   // 自陣 los=20（goodness 大）
+var ptsOppoSide  = drivePoints(90, 0);   // 相手陣 los=90（goodness 小）
+assert("相手ドライブ: 自陣(los=20) の平均得点 > 敵陣(los=90) の平均得点", ptsSelfSide > ptsOppoSide);
+
+var ptsNoPin   = drivePoints(20, 0);
+var ptsWithPin = drivePoints(20, 0.4);
+assert("相手ドライブ: pinBonus=0.4 で平均得点が抑制される", ptsWithPin < ptsNoPin);
+
+// ------------------------------------------------------------
+// 終了
+// ------------------------------------------------------------
+console.log("");
+if (failed === 0) {
+  console.log("全テスト [OK]");
+  process.exit(0);
+} else {
+  console.error(failed + " 件のテストが [NG]");
+  process.exit(1);
+}
