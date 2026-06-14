@@ -68,16 +68,18 @@
   var FUR = { owl:0xe7d4a8, rabbit:0xf6f0e6, squirrel:0xd38c50, bear:0xb58359, rhino:0xaeb7c1, dog:0xe3a55b, gen:0x8fa0b3 };
 
   var scene, camera, renderer;
-  var ball, ballMarker, trail, trailPts = [];
+  var ball, ballMarker, trail, trailPts = [], manager = null;
   var offense = [], defense = [], carrier = null, qb = null, rb = null, wr = null;
   var clock;
 
   var GOAL_NEAR = 10, GOAL_FAR = 110;
   var state = {
     los: 40, toGo: 10, down: 1, home: 0, away: 0,
-    phase: "formation", formation: null, play: null
+    phase: "formation", formation: null, play: null, taped: null
   };
   var hintsShown = {};
+  var pendingTape = null, tapeCooldown = 2;
+  var TAPE_NAMES = ["ミミィ", "ピョン太", "ナッツ", "ゴロ", "ガード"];
   var anim = null;
   var view = "quarter";
   var camPos = new THREE.Vector3(), camTarget = new THREE.Vector3();
@@ -150,6 +152,33 @@
     return g;
   }
 
+  // サイドラインで試合を撮影するマネージャー（記録・分析の可視化）
+  function makeManager() {
+    var g = new THREE.Group();
+    var fur = 0xf0e2c8, jacket = 0x2f9e8f;
+    g.add(box(0.5, 0.5, 0.5, 0x6b4a2f, -0.3, 0.25, 0));
+    g.add(box(0.5, 0.5, 0.5, 0x6b4a2f, 0.3, 0.25, 0));
+    g.add(box(1.2, 1.0, 0.9, jacket, 0, 1.0, 0));
+    g.add(box(0.95, 0.9, 0.9, fur, 0, 1.85, 0.04));
+    g.add(box(0.16, 0.16, 0.08, 0x222222, -0.22, 1.92, 0.46));
+    g.add(box(0.16, 0.16, 0.08, 0x222222, 0.22, 1.92, 0.46));
+    g.add(box(0.26, 0.26, 0.12, fur, -0.3, 2.4, 0));
+    g.add(box(0.26, 0.26, 0.12, fur, 0.3, 2.4, 0));
+    g.add(box(0.22, 0.7, 0.22, fur, 0, 1.0, -0.6));
+    g.add(box(0.18, 0.18, 0.5, jacket, -0.4, 1.55, 0.32));
+    g.add(box(0.18, 0.18, 0.5, jacket, 0.4, 1.55, 0.32));
+    var cam = new THREE.Group();
+    cam.add(box(0.55, 0.45, 0.5, 0x222831, 0, 0, 0));
+    var lens = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.3, 12), new THREE.MeshLambertMaterial({ color: 0x111418 }));
+    lens.rotation.x = Math.PI / 2; lens.position.set(0, 0, 0.3); cam.add(lens);
+    var rec = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff3b30 }));
+    rec.position.set(0.2, 0.18, 0.16); cam.add(rec);
+    cam.position.set(0, 1.85, 0.5); g.add(cam);
+    g.scale.set(0.85, 0.85, 0.85);
+    g.userData.rec = rec;
+    return g;
+  }
+
   function field() {
     var g = new THREE.Group();
     g.add(box(56, 0.2, 120, 0x4f9d4f, 0, 0, 60));
@@ -185,17 +214,23 @@
 
   function outcome(formation, play) {
     var r = Math.random(), y = 0, complete = true, turnover = false, msg = "";
+    var taped = state.taped;
+    var runHurt = taped && (taped.role === "rb" || taped.role === "line");
+    var passHurt = taped && (taped.role === "qb" || taped.role === "wr");
     if (play === "run") {
       y = rand(1, 6); if (formation === "i" || formation === "goal") y += rand(1.5, 4);
       if (r > 0.9) y += rand(8, 22);
+      if (runHurt) y *= 0.55;
       msg = "ランで前進！";
     } else if (play === "short") {
-      if (r < 0.18) { complete = false; y = 0; msg = "パス失敗…ドンマイ！"; }
-      else { y = rand(4, 9); if (formation === "shotgun" || formation === "single") y += rand(1, 3); msg = "ショートパス成功！"; }
+      var failT = passHurt ? 0.38 : 0.18;
+      if (r < failT) { complete = false; y = 0; msg = "パス失敗…ドンマイ！"; }
+      else { y = rand(4, 9); if (formation === "shotgun" || formation === "single") y += rand(1, 3); if (passHurt) y *= 0.7; msg = "ショートパス成功！"; }
     } else {
-      if (r < 0.1) { turnover = true; y = 0; msg = "インターセプト！相手ボールに…"; }
-      else if (r < 0.5) { complete = false; y = 0; msg = "ロングパスは届かず…！"; }
-      else { y = rand(12, 30); if (formation === "shotgun") y += rand(2, 6); msg = "ロングパス成功！大きく前進！"; }
+      var intT = passHurt ? 0.16 : 0.1, missT = passHurt ? 0.62 : 0.5;
+      if (r < intT) { turnover = true; y = 0; msg = "インターセプト！相手ボールに…"; }
+      else if (r < missT) { complete = false; y = 0; msg = "ロングパスは届かず…！"; }
+      else { y = rand(12, 30); if (formation === "shotgun") y += rand(2, 6); if (passHurt) y *= 0.7; msg = "ロングパス成功！大きく前進！"; }
     }
     y = Math.round(y);
     return { yards: y, complete: complete, turnover: turnover, msg: msg };
@@ -223,6 +258,7 @@
   }
 
   function finalize(o) {
+    recoverTape();
     var gained = Math.max(0, Math.round(ball.position.z - state.los));
     if (o.turnover) {
       setBubble("ホイッスル先生：" + o.msg + " 切り替えていこう！");
@@ -262,10 +298,35 @@
   function nextPlayReady() {
     updateHUD();
     state.phase = "formation"; state.formation = null;
+    maybeTape();
     placeFormationLater();
   }
   function placeFormationLater() {
     setTimeout(function () { chooseFormationUI(); }, 1300);
+  }
+
+  // けが・テーピング補助（低頻度。次の1プレーだけ担当プレーが軽く不利になる）
+  function maybeTape() {
+    if (tapeCooldown > 0) { tapeCooldown--; return; }
+    if (Math.random() > 0.15) return;
+    if (state.taped) return;
+    var idx = Math.floor(rand(0, offense.length));
+    var p = offense[idx];
+    if (!p) return;
+    var role = idx === 0 ? "qb" : idx === 1 ? "rb" : idx === 2 ? "wr" : "line";
+    var band = box(0.42, 0.16, 0.5, 0xffffff, 0.32, 0.22, 0.02);
+    p.add(band);
+    state.taped = { role: role, name: TAPE_NAMES[idx] || "せんしゅ", band: band, player: p };
+    pendingTape = state.taped;
+    tapeCooldown = 3;
+  }
+
+  // テーピングは1プレーで回復（帯を外して通常状態に戻す）
+  function recoverTape() {
+    var t = state.taped;
+    if (!t) return;
+    if (t.band && t.player) t.player.remove(t.band);
+    state.taped = null;
   }
 
   function ordinal(d) { return d === 1 ? "1st" : d === 2 ? "2nd" : d === 3 ? "3rd" : "4th"; }
@@ -289,7 +350,13 @@
   function chooseFormationUI() {
     state.phase = "formation";
     placeFormation("single");
-    setBubble("ホイッスル先生：まずは<b>隊形</b>を選んでね！");
+    var lead = "ホイッスル先生：";
+    if (pendingTape) {
+      var affect = (pendingTape.role === "rb" || pendingTape.role === "line") ? "ラン" : "パス";
+      lead += pendingTape.name + " を<b>テーピング</b>中。今回は<b>" + affect + "</b>がちょっと不利かも。ほかの手もあるよ。 ";
+      pendingTape = null;
+    }
+    setBubble(lead + "まずは<b>隊形</b>を選んでね！");
     setCards([
       { ico: "🎯", t: "ショットガン", d: "後ろから構えてパス向き", fn: function () { pickFormation("shotgun"); } },
       { ico: "💪", t: "アイ", d: "縦に並んで突進ラン向き", fn: function () { pickFormation("i"); } },
@@ -407,6 +474,7 @@
 
     ball = makeBall(); scene.add(ball);
     ballMarker = makeMarker(); scene.add(ballMarker);
+    manager = makeManager(); manager.position.set(-32, 0, 56); scene.add(manager);
 
     var tg = new THREE.BufferGeometry();
     tg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(50 * 3), 3));
@@ -438,6 +506,13 @@
     ballMarker.children[0].rotation.z = t * 2;
     ballMarker.userData.arrow.position.y = 2.4 + Math.sin(t * 4) * 0.2;
     ball.rotation.z += dt * 4;
+    if (manager) {
+      var mdx = ball.position.x - manager.position.x, mdz = ball.position.z - manager.position.z;
+      var targetYaw = Math.atan2(mdx, mdz);
+      manager.rotation.y += (targetYaw - manager.rotation.y) * Math.min(1, dt * 4);
+      manager.userData.rec.visible = Math.sin(t * 5) > 0;
+      manager.position.y = Math.abs(Math.sin(t * 2)) * 0.05;
+    }
     updateTrail();
     updateCamera(dt);
     renderer.render(scene, camera);
