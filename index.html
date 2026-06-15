@@ -98,6 +98,17 @@
   function teamStat(list, role, key) { var s = 0, n = 0; list.forEach(function (p) { if (p.userData.role === role) { s += statOf(p, key); n++; } }); return n ? s / n : 6; }
   function defenseStat(key) { var s = 0; defense.forEach(function (p) { s += statOf(p, key); }); return defense.length ? s / defense.length : 6; }
   function bestKicker() { var b = offense[0], bv = -1; offense.forEach(function (p) { var k = statOf(p, "kick"); if (k > bv) { bv = k; b = p; } }); return b; }
+  // list の中で (x,z) に最も近い選手を返す（role 指定があればその役割に限定）
+  function nearestIn(list, x, z, role) {
+    var best = null, bd = Infinity;
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i];
+      if (role && o.userData.role !== role) continue;
+      var dx = o.position.x - x, dz = o.position.z - z, d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; best = o; }
+    }
+    return best;
+  }
 
   function box(w, h, d, color, x, y, z) {
     var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color: color }));
@@ -439,7 +450,7 @@
     defAnim.endT += dt;
     var ep = Math.min(1, defAnim.endT / 0.45);
     if (defAnim.td) {
-      c.position.y = Math.abs(Math.sin(ep * Math.PI * 2)) * (1 - ep) * 1.2;   // TD: 喜ぶ
+      c.position.y = Math.abs(Math.sin(ep * Math.PI * 2)) * (1 - ep) * 0.7;   // TD: 喜ぶ
     } else {
       c.rotation.x = -1.2 * ep;                                              // 味方が止めて倒す
       c.position.y = Math.max(0, 0.2 * (1 - ep));
@@ -699,7 +710,7 @@
           // 成功: マーカー緑＋キャッチでひと跳ね→ボールを持って前進
           setMarkerColor(0x35c759);
           var fz = lerp(anim.wrTarget.z, anim.endZ, pp2);
-          var catchHop = Math.max(0, 0.25 - pp2) * 4;        // 捕った瞬間にジャンプ
+          var catchHop = Math.max(0, 0.25 - pp2) * 2.3;      // 捕った瞬間にジャンプ（実寸キャラに合わせ控えめ）
           wr.position.z = fz; wr.position.y = Math.abs(Math.sin(pp2 * 14)) * 0.2 + catchHop;
           setBall(wr.position.x, fz + 0.3, 1.4 + catchHop);
         } else if (anim.o.reason === "overthrow") {
@@ -721,31 +732,50 @@
       }
     }
 
-    // ライン攻防: OLを前進させ、守備ラインを逆方向へシフト
-    if (anim.olPower !== undefined && anim.dPower !== undefined) {
-      var shift = window.BoxelGame.lineClashShift(anim.olPower, anim.dPower, 2);
-      offense.forEach(function (off) {
-        if (off.userData.role === "OL") {
-          off.position.z = off.userData.pz0 + shift * p;
+    // === 全選手が動く（攻撃側の役割）: OL=ブロック / QB=ドロップ・フェイク / 他WR・RB=ルート ===
+    var carrierNow = currentCarrier;
+    var shift = window.BoxelGame.lineClashShift(anim.olPower || 6, anim.dPower || 6, 1.5);
+    offense.forEach(function (off) {
+      if (off === carrierNow) return;                    // キャリアは別処理
+      var orole = off.userData.role;
+      if (orole === "OL") {
+        // 最寄りの守備ライン(DL)に当たって押す。パワー勝ちなら前へ、負けなら後ろへ。
+        var d = nearestIn(defense, off.position.x, off.position.z, "DL");
+        if (d) {
+          off.position.x += (d.position.x - off.position.x) * Math.min(1, dt * 1.6);
+          off.position.z += ((d.position.z - 0.7 + shift) - off.position.z) * Math.min(1, dt * 1.6);
+          off.rotation.y = Math.atan2(d.position.x - off.position.x, d.position.z - off.position.z);
+          off.position.y = Math.abs(Math.sin(p * 26)) * 0.05;   // 踏ん張り
         }
-      });
-      // 守備ラインは逆方向（OLに押し返される）
-      defense.forEach(function (def) {
-        if (def.userData.role === "DL" || def.userData.role === "DF") {
-          def.position.z = def.userData.pz0 - shift * p * 0.5;
-        }
-      });
-    }
+      } else if (orole === "QB") {
+        if (anim.kind === "pass") off.position.z = off.userData.pz0 - Math.min(p / 0.3, 1) * 6;  // ドロップバック
+        else off.position.z = off.userData.pz0 - Math.min(p / 0.4, 1) * 3;                        // ラン: フェイク後に少し下がる
+      } else {
+        // 非ターゲットの WR/RB: 斜め前へルートを走る（デコイ）
+        var dir = (off.userData.px0 >= 0) ? 1 : -1;
+        off.position.z = off.userData.pz0 + p * 16;
+        off.position.x = off.userData.px0 + dir * p * 6;
+        off.position.y = Math.abs(Math.sin(p * 16)) * 0.18;
+        off.rotation.y = Math.atan2(dir * 6, 16);
+      }
+    });
 
     // 守備の追走（役割で速度を変える）。タックル演出フェーズ中は追走を止める。
-    var carrierNow = currentCarrier;
     if (anim.phase !== "tackle") {
       for (var i = 0; i < defense.length; i++) {
         var def = defense[i];
         var role = def.userData.role;
         var isTackler = (anim.tacklerIdx === i);
-        // DL（ライン担当）はライン攻防に専念し追走しない（タックラー指名時を除く）
-        if (role === "DL" && !isTackler) continue;
+        // DL（ライン担当）は最寄りのOLに当たって押し合う（追走しない・タックラー時を除く）
+        if (role === "DL" && !isTackler) {
+          var ol = nearestIn(offense, def.position.x, def.position.z, "OL");
+          if (ol) {
+            def.position.x += (ol.position.x - def.position.x) * Math.min(1, dt * 1.4);
+            def.position.z += ((ol.position.z + 0.7 - shift) - def.position.z) * Math.min(1, dt * 1.4);
+            def.rotation.y = Math.atan2(ol.position.x - def.position.x, ol.position.z - def.position.z);
+          }
+          continue;
+        }
         // CB=俊足で強く追う / LB ほか=中盤で追う
         var pursuitT = dt * (role === "CB" ? 3.2 : 2.6);
         if (isTackler && p > 0.6) {
@@ -821,7 +851,7 @@
     } else {
       // --- 倒れない演出: タッチダウンで喜ぶ（小さくジャンプ・倒れない）---
       var hop = Math.abs(Math.sin(tp * Math.PI * 2)) * (1 - tp);
-      carrierNow.position.y = anim.carrierBaseY + hop * 1.2;
+      carrierNow.position.y = anim.carrierBaseY + hop * 0.7;
       setBall(carrierNow.position.x, carrierNow.position.z + 0.3, 1.2 + hop * 1.2);
     }
 

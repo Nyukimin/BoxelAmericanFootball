@@ -196,7 +196,7 @@
     }
 
     g.add(head);
-    g.scale.set(1.2, 1.2, 1.2);
+    g.scale.set(0.7, 0.7, 0.7);   // 身長≈2ヤード(6フィート)。1 unit=1ヤードのフィールドに実寸を合わせる
     g.userData.base = g.position.clone();
     g.userData.head = head;
     return g;
@@ -234,7 +234,7 @@
     rec.position.set(0.34, 0.28, 0.22); cam.add(rec);
     cam.add(box(0.2, 0.22, 0.22, 0x2b2f35, -0.32, 0.06, -0.34));  // 後ろのアイカップ
     cam.position.set(0, 1.86, 0.62); g.add(cam);
-    g.scale.set(1.38, 1.38, 1.38);
+    g.scale.set(0.8, 0.8, 0.8);   // 選手(0.7)に合わせてサイドラインのマネージャーも縮小
     g.userData.rec = rec;
     return g;
   }
