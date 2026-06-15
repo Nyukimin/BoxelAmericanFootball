@@ -171,7 +171,19 @@
     var dur, kind;
     if (play === "run") { kind = "run"; carrier = rb; var sp = (carrier.userData.stats && carrier.userData.stats.speed) || 6; dur = (1.0 + o.yards * 0.04) * (1.15 - sp * 0.03); }
     else { kind = "pass"; dur = 0.9; carrier = wr; }
-    anim = { t: 0, dur: dur, kind: kind, o: o, startZ: startZ, endZ: endZ, phase: "move", catchZ: endZ };
+
+    // 初期位置を保存し、ライン攻防・タックラーを事前計算
+    offense.forEach(function (p) { p.userData.px0 = p.position.x; p.userData.pz0 = p.position.z; });
+    defense.forEach(function (p) { p.userData.px0 = p.position.x; p.userData.pz0 = p.position.z; });
+    var olPower = teamStat(offense, "OL", "power");
+    var dPower  = teamStat(defense, "DF", "power");
+    var tacklerIdx = window.BoxelGame.nearestDefenderIndex(
+      { x: 0, z: endZ },
+      defense.map(function (d) { return { x: d.position.x, z: d.position.z }; })
+    );
+
+    anim = { t: 0, dur: dur, kind: kind, o: o, startZ: startZ, endZ: endZ, phase: "move", catchZ: endZ,
+             olPower: olPower, dPower: dPower, tacklerIdx: tacklerIdx };
     if (kind === "pass") {
       wr.position.z = state.los; wr.position.x = (state.formation === "shotgun" || state.formation === "single") ? 11 : 6;
       anim.wrFromZ = wr.position.z; anim.wrFromX = wr.position.x;
@@ -436,13 +448,12 @@
     if (!anim) return;
     anim.t += dt;
     var p = Math.min(1, anim.t / anim.dur);
+    var currentCarrier = (anim.kind === "run") ? rb : wr;
+
     if (anim.kind === "run") {
       var z = lerp(anim.startZ, anim.endZ, p);
       carrier.position.z = z; carrier.position.y = Math.abs(Math.sin(p * 18)) * 0.25;
       setBall(carrier.position.x, z + 0.3, 1.3);
-      for (var i = 0; i < defense.length; i++) {
-        defense[i].position.z = lerp(defense[i].userData.dz || defense[i].position.z, z + rand(-1, 2), 0.04);
-      }
     } else {
       var bp;
       if (p < 0.78) {
@@ -464,6 +475,45 @@
         }
       }
     }
+
+    // ライン攻防: OLを前進させ、守備ラインを逆方向へシフト
+    if (anim.olPower !== undefined && anim.dPower !== undefined) {
+      var shift = window.BoxelGame.lineClashShift(anim.olPower, anim.dPower, 2);
+      offense.forEach(function (off) {
+        if (off.userData.role === "OL") {
+          off.position.z = off.userData.pz0 + shift * p;
+        }
+      });
+      // 守備ラインは逆方向（OLに押し返される）
+      defense.forEach(function (def) {
+        if (def.userData.role === "DL" || def.userData.role === "DF") {
+          def.position.z = def.userData.pz0 - shift * p * 0.5;
+        }
+      });
+    }
+
+    // 守備全体の追走: pursuitTarget でキャリアへ寄せる
+    var carrierNow = currentCarrier;
+    for (var i = 0; i < defense.length; i++) {
+      var def = defense[i];
+      var isTackler = (anim.tacklerIdx === i);
+      var pursuitT;
+      if (isTackler && p > 0.8) {
+        // タックラーは終盤で強く収束
+        pursuitT = dt * 4.0;
+      } else {
+        // 通常追走（弱め）
+        pursuitT = dt * 1.5;
+      }
+      var tgt = window.BoxelGame.pursuitTarget(
+        { x: def.position.x, z: def.position.z },
+        { x: carrierNow.position.x, z: carrierNow.position.z },
+        pursuitT
+      );
+      def.position.x = tgt.x;
+      def.position.z = tgt.z;
+    }
+
     if (p >= 1) { var o = anim.o; anim = null; setTimeout(function () { finalize(o); }, 350); }
   }
 
@@ -545,6 +595,15 @@
     document.getElementById("start").style.display = "none";
     resetGame();
   };
+
+  // テスト用: offense/defense/carrier/anim を window.__BoxelTest に公開
+  window.__BoxelTest = {
+    getOffense: function () { return offense; },
+    getDefense: function () { return defense; },
+    getCarrier: function () { return carrier; },
+    getAnim: function () { return anim; }
+  };
+
   init();
 })();
 </script>

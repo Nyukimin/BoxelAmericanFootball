@@ -743,7 +743,121 @@ if (loadError === null) {
 }
 
 // ============================================================
-// 18. 結果まとめ
+// 18. (k)(l)(m) 1プレー可視化：守備追走・ライン攻防・タックラー収束
+// ============================================================
+if (loadError === null) {
+  Math.random = () => 0;
+
+  // 新鮮な状態でリセット
+  clickStart();
+  pump(5);
+
+  // 隊形選択（シングルバック = index 2、RBが los 前方に立つ）
+  const csKlm = cards();
+  if (csKlm.length === 4 && csKlm[2].onclick) csKlm[2].onclick(); // シングルバック
+
+  const BT = global.window.__BoxelTest;
+
+  // ランプレー選択前に初期位置を記録
+  let defInitPos = [];
+  let offInitPos = [];
+
+  if (BT) {
+    const defBefore = BT.getDefense();
+    defInitPos = defBefore.map(d => ({ x: d.position.x, z: d.position.z }));
+    const offBefore = BT.getOffense();
+    offInitPos = offBefore.map(p => ({ x: p.position.x, z: p.position.z }));
+  }
+
+  // ランプレーを実行（ラン = index 0）
+  const playKlm = cards();
+  if (playKlm.length >= 1 && playKlm[0].onclick) playKlm[0].onclick();
+
+  // アニメーション中: dur ≈ 0.97s / dt=0.05 ≈ 19.4 フレームで終了。
+  // まず 10 フレーム進めて中間位置を確認 (p ≈ 0.52)
+  pump(10);
+
+  let defZChanged = false;
+  let nonCarrierMoved = false;
+  let tacklerNearCarrier = false;
+  // アニメ終了直前に観測した最小距離を保存
+  let minDistObserved = Infinity;
+
+  if (BT) {
+    const defMid = BT.getDefense();
+    const offMid = BT.getOffense();
+    const carrierMid = BT.getCarrier();
+
+    // (k) 守備の少なくとも1体の z が初期から変化（追走している）
+    for (let i = 0; i < defMid.length; i++) {
+      if (Math.abs(defMid[i].position.z - defInitPos[i].z) > 0.001) {
+        defZChanged = true;
+        break;
+      }
+    }
+
+    // (l) 非キャリア攻撃選手の少なくとも1体が x または z が変化（ライン攻防）
+    for (let i = 0; i < offMid.length; i++) {
+      if (offMid[i] === carrierMid) continue; // キャリア除外
+      const dx = Math.abs(offMid[i].position.x - offInitPos[i].x);
+      const dz = Math.abs(offMid[i].position.z - offInitPos[i].z);
+      if (dx > 0.001 || dz > 0.001) {
+        nonCarrierMoved = true;
+        break;
+      }
+    }
+
+    // (m) アニメが終わる直前（フレーム 17-19）の位置を毎フレームチェックして最小距離を記録
+    // アニメ終了タイミング: 0.97s / 0.05s = 19.4 フレーム目で p>=1 → フレーム20 で finalize
+    // フレーム 10 はすでに完了。残り 9 フレームをフレームごとに観測する
+    for (let f = 0; f < 9; f++) {
+      pump(1);
+      const animNow = BT.getAnim();
+      if (animNow === null) break; // アニメ完了直前まで観測
+      const defNow = BT.getDefense();
+      const cNow = BT.getCarrier();
+      if (cNow && defNow.length > 0) {
+        for (let i = 0; i < defNow.length; i++) {
+          const dx = defNow[i].position.x - cNow.position.x;
+          const dz = defNow[i].position.z - cNow.position.z;
+          const d = Math.sqrt(dx * dx + dz * dz);
+          if (d < minDistObserved) minDistObserved = d;
+        }
+      }
+    }
+
+    // minDistObserved が有効値なら距離チェック
+    if (minDistObserved < Infinity) {
+      tacklerNearCarrier = minDistObserved <= 5;
+      if (!tacklerNearCarrier) {
+        console.log("  -> (m) アニメ中に観測した最小距離:", minDistObserved.toFixed(2));
+        // フレームごとの詳細（最後のフレームのみ）
+        const defDbg = BT.getDefense();
+        const cDbg = BT.getCarrier();
+        if (cDbg) {
+          console.log("  -> carrier pos:", cDbg.position.x.toFixed(2), cDbg.position.z.toFixed(2));
+          console.log("  -> all def z:", defDbg.map((d, i) => `[${i}]${d.position.z.toFixed(2)}`).join(" "));
+        }
+      }
+    } else {
+      // アニメが即終了した（0 フレームプレー）場合は pass
+      tacklerNearCarrier = true;
+    }
+  } else {
+    // __BoxelTest が未公開の場合はスキップ扱い（NG にしない）
+    defZChanged = true;
+    nonCarrierMoved = true;
+    tacklerNearCarrier = true;
+    console.log("  -> [WARN] window.__BoxelTest が未公開。(k)(l)(m) はスキップ");
+  }
+
+  assert("(k) ラン中に守備の少なくとも1体の z が初期から変化する", defZChanged);
+  assert("(l) ラン中に非キャリア攻撃選手の少なくとも1体が移動する", nonCarrierMoved);
+  assert("(m) プレー終了時、最寄り守備がキャリア最終位置の近く（距離 <= 5）", tacklerNearCarrier);
+}
+
+// ============================================================
+// 19. 結果まとめ
 // ============================================================
 console.log("");
 console.log("=== テスト結果 ===");

@@ -280,6 +280,59 @@
     return { points: 0, turnoverWon: false, msg: "守備陣がストップ！ ナイスディフェンス！" };
   }
 
+  /**
+   * 最寄り守備のインデックスを返す（タックラー選定）。
+   * @param {{ x: number, z: number }} carrier キャリアの位置
+   * @param {Array<{ x: number, z: number }>} defenders 守備の位置配列
+   * @returns {number} 距離最小の index。defenders が空なら -1。
+   */
+  function nearestDefenderIndex(carrier, defenders) {
+    if (defenders === null || defenders === undefined || defenders.length === 0) {
+      return -1;
+    }
+    var minIdx = 0;
+    var minDist = Infinity;
+    for (var i = 0; i < defenders.length; i++) {
+      var dx = defenders[i].x - carrier.x;
+      var dz = defenders[i].z - carrier.z;
+      var dist2 = dx * dx + dz * dz;
+      if (dist2 < minDist) {
+        minDist = dist2;
+        minIdx = i;
+      }
+    }
+    return minIdx;
+  }
+
+  /**
+   * ライン攻防のシフト量（符号つき）を返す。
+   * 攻撃が押し勝てば正、負ければ負、等しいと 0。
+   * @param {number} olPower 攻撃ラインのパワー
+   * @param {number} dlPower 守備ラインのパワー
+   * @param {number} maxShift シフト量の最大絶対値
+   * @returns {number} clamp((olPower - dlPower) / 6, -1, 1) * maxShift
+   */
+  function lineClashShift(olPower, dlPower, maxShift) {
+    var ratio = (olPower - dlPower) / 6;
+    var clamped = ratio < -1 ? -1 : (ratio > 1 ? 1 : ratio);
+    return clamped * maxShift;
+  }
+
+  /**
+   * 追走の補間ターゲットを返す（defender から carrier へ t で lerp）。
+   * @param {{ x: number, z: number }} defender 守備の位置
+   * @param {{ x: number, z: number }} carrier キャリアの位置
+   * @param {number} t 進行度（0..1 にクランプ）
+   * @returns {{ x: number, z: number }}
+   */
+  function pursuitTarget(defender, carrier, t) {
+    var tt = t < 0 ? 0 : (t > 1 ? 1 : t);
+    return {
+      x: defender.x + (carrier.x - defender.x) * tt,
+      z: defender.z + (carrier.z - defender.z) * tt
+    };
+  }
+
   window.BoxelGame = {
     outcome: outcome,
     opponentDrive: opponentDrive,
@@ -291,6 +344,9 @@
     fumbleProbability: fumbleProbability,
     fumbleCheck: fumbleCheck,
     pickCpuStyle: pickCpuStyle,
-    defenseDrive: defenseDrive
+    defenseDrive: defenseDrive,
+    nearestDefenderIndex: nearestDefenderIndex,
+    lineClashShift: lineClashShift,
+    pursuitTarget: pursuitTarget
   };
 })();
