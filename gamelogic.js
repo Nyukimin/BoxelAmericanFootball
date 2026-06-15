@@ -24,8 +24,10 @@
     var wrCatch  = (ctx && ctx.wrCatch  != null) ? ctx.wrCatch  : 6;
     var wrSpeed  = (ctx && ctx.wrSpeed  != null) ? ctx.wrSpeed  : 6;
     var tapedRole = (ctx && ctx.tapedRole) ? ctx.tapedRole : null;
+    var coverage  = (ctx && ctx.coverage) ? ctx.coverage : null;
+    var edge      = coverageMatchup(play, coverage).edge;   // -1/0/1（守備の読み合い）
 
-    var r = Math.random(), y = 0, complete = true, turnover = false, msg = "";
+    var r = Math.random(), y = 0, complete = true, turnover = false, msg = "", reason = "";
     var runHurt  = tapedRole === "RB" || tapedRole === "OL";
     var passHurt = tapedRole === "QB" || tapedRole === "WR";
 
@@ -43,38 +45,48 @@
       if (r > (1 - 0.10 * spd)) y += rand(8, 22) * spd;   // 速いほどブレイク
       if (Math.random() < 0.12 / pwr) y -= rand(2, 5);     // 弱いと止められる
       if (runHurt) y *= 0.55;
-      msg = "ランで前進！";
+      y *= (1 + 0.5 * edge);                                // 読み合い: 相性◎で+50%/△で-50%
+      msg = "ランで前進！"; reason = "run";
     } else if (play === "short") {
       var dropS = 0.16 / cat;                               // 捕球低いほど落球
       var failT = (passHurt ? 0.30 : 0.10) + dropS;
+      failT = Math.max(0.02, Math.min(0.95, failT - 0.18 * edge)); // 読み合い: ◎で成功しやすく
       if (r < failT) {
         complete = false; y = 0;
         msg = (r < dropS ? "あっ、落球…！" : "パス失敗…ドンマイ！");
+        reason = (r < dropS ? "drop" : "miss");
       } else {
         y = rand(4, 8) + rand(0, 3) * wrSpd;
         if (formation === "shotgun" || formation === "single") y += rand(1, 3);
         if (passHurt) y *= 0.7;
-        msg = "ショートパス成功！";
+        y *= (1 + 0.4 * edge);
+        msg = "ショートパス成功！"; reason = "catch";
       }
     } else {
       // long
       var dropL = 0.14 / cat;
       var intT  = passHurt ? 0.16 : 0.1;
+      if (edge < 0) intT += 0.04;                           // 相性△（ロング対ゾーン）は奪われやすい
       var missT = (passHurt ? 0.55 : 0.42) + dropL;
+      missT = Math.max(0.05, Math.min(0.97, missT - 0.20 * edge)); // 読み合い: ◎で通りやすく
       if (r < intT) {
-        turnover = true; y = 0; msg = "インターセプト！相手ボールに…";
+        turnover = true; y = 0; msg = "インターセプト！相手ボールに…"; reason = "intercept";
       } else if (r < missT) {
         complete = false; y = 0;
         msg = (r < intT + dropL ? "あぁ落球…！" : "ロングパスは届かず…！");
+        reason = (r < intT + dropL ? "drop" : "overthrow");
       } else {
         y = rand(12, 26) + rand(0, 8) * wrSpd;
         if (formation === "shotgun") y += rand(2, 6);
         if (passHurt) y *= 0.7;
-        msg = "ロングパス成功！大きく前進！";
+        y *= (1 + 0.4 * edge);
+        msg = "ロングパス成功！大きく前進！"; reason = "catch";
       }
     }
     y = Math.round(Math.max(0, y));
-    return { yards: y, complete: complete, turnover: turnover, msg: msg };
+    if (edge > 0)      msg += "（相性バッチリ！）";
+    else if (edge < 0) msg += "（相手の守りにハマった…）";
+    return { yards: y, complete: complete, turnover: turnover, msg: msg, reason: reason };
   }
 
   /**
@@ -218,6 +230,63 @@
   }
 
   /**
+   * プレーと守備カバレッジの相性を返す（読み合いの核・純粋関数）。
+   * 三角関係: short>blitz / long>man / run>zone（相性◎）。逆は相性△。
+   * @param {string} play "run"|"short"|"long"
+   * @param {string|null} coverage "blitz"|"man"|"zone"|null
+   * @returns {{ edge: -1|0|1, label: string }}
+   */
+  function coverageMatchup(play, coverage) {
+    var beats   = { run: "zone",  short: "blitz", long: "man" };
+    var losesTo = { run: "blitz", short: "man",   long: "zone" };
+    if (!coverage || !play) return { edge: 0, label: "" };
+    if (beats[play] === coverage)   return { edge: 1,  label: "相性◎" };
+    if (losesTo[play] === coverage) return { edge: -1, label: "相性△" };
+    return { edge: 0, label: "互角" };
+  }
+
+  /**
+   * 守備のカバレッジを選ぶ（状況で重み付け＋乱数・読み合いの相手側）。
+   * @param {object} opts opts.down(1-4) opts.toGo(残りヤード)
+   * @returns {"blitz"|"man"|"zone"}
+   */
+  function pickDefenseCoverage(opts) {
+    var toGo = (opts && opts.toGo != null) ? opts.toGo : 10;
+    var down = (opts && opts.down != null) ? opts.down : 1;
+    var wBlitz = 1, wMan = 1, wZone = 1;
+    if (toGo <= 3) wBlitz += 1.2;   // あと少しは前に詰めて止める
+    if (toGo >= 8) wZone  += 1.0;   // 長い残りは大きいのを警戒
+    if (down >= 3) wMan   += 0.6;   // 勝負どころは張り付き
+    var total = wBlitz + wMan + wZone;
+    var r = Math.random() * total;
+    if (r < wBlitz) return "blitz";
+    if (r < wBlitz + wMan) return "man";
+    return "zone";
+  }
+
+  /**
+   * CPU攻撃の1プレー（ラン/ショート/ロング）を状況で選ぶ（純粋関数）。
+   * @param {object} opts opts.down(1-4) opts.toGo(残りヤード) opts.cpuStyle("run"|"pass"|"balanced")
+   * @returns {"run"|"short"|"long"}
+   */
+  function pickCpuPlay(opts) {
+    var toGo  = (opts && opts.toGo  != null) ? opts.toGo  : 10;
+    var down  = (opts && opts.down  != null) ? opts.down  : 1;
+    var style = (opts && opts.cpuStyle) ? opts.cpuStyle : "balanced";
+    var wRun = 1, wShort = 1, wLong = 1;
+    if (style === "run") wRun += 2;
+    else if (style === "pass") { wShort += 1; wLong += 1; }
+    if (toGo <= 3) wRun += 1;                  // 短い残りはラン寄り
+    if (toGo >= 8) { wLong += 0.8; wShort += 0.4; } // 長い残りはパス寄り
+    if (down >= 3 && toGo >= 6) wLong += 0.6;  // 勝負どころの長い残りはロング
+    var total = wRun + wShort + wLong;
+    var r = Math.random() * total;
+    if (r < wRun) return "run";
+    if (r < wRun + wShort) return "short";
+    return "long";
+  }
+
+  /**
    * 守備の采配をシミュレートして得点と結果を返す（純粋関数）。
    * @param {object} opts
    *   opts.front     {"runStop"|"balanced"|"passDef"|"goalLine"}
@@ -344,6 +413,9 @@
     fumbleProbability: fumbleProbability,
     fumbleCheck: fumbleCheck,
     pickCpuStyle: pickCpuStyle,
+    pickCpuPlay: pickCpuPlay,
+    coverageMatchup: coverageMatchup,
+    pickDefenseCoverage: pickDefenseCoverage,
     defenseDrive: defenseDrive,
     nearestDefenderIndex: nearestDefenderIndex,
     lineClashShift: lineClashShift,

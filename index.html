@@ -35,6 +35,8 @@
   #start h1 { font-size: 34px; color: #2f6b3c; } #start p { color: #5a6b4a; margin: 8px 0 22px; font-size: 15px; }
   #start .ball { font-size: 64px; }
   .hint { font-size: 12px; opacity: .75; }
+  #tapNext { display: none; margin-top: 8px; text-align: center; font-size: 14px; font-weight: 700; color: #2f4d22; background: #ffe9b8; border: 2px solid #ffd166; border-radius: 10px; padding: 9px; cursor: pointer; animation: tapPulse 1s ease-in-out infinite; }
+  @keyframes tapPulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
 </style>
 </head>
 <body>
@@ -57,6 +59,7 @@
 
 <div class="hud" id="panel">
   <div class="bubble" id="bubble">ホイッスル先生：まずは隊形を選んでね！</div>
+  <div id="tapNext">▶ タップで次へ</div>
   <div class="cards" id="cards"></div>
 </div>
 
@@ -77,11 +80,14 @@
   var state = {
     los: 40, toGo: 10, down: 1, home: 0, away: 0, drive: 0,
     phase: "formation", formation: null, play: null, taped: null,
-    mode: "offense", cpuStyle: null, defLos: 40, defPin: 0
+    mode: "offense", cpuStyle: null, defLos: 40, defPin: 0,
+    oppLos: 40, oppDown: 1, oppToGo: 10, defFront: "balanced"
   };
   var hintsShown = {};
   var pendingTape = null, tapeCooldown = 2;
   var anim = null;
+  var defAnim = null;
+  var continueTimer = null;
   var view = "quarter";
   var camPos = new THREE.Vector3(), camTarget = new THREE.Vector3();
 
@@ -152,13 +158,24 @@
 
   function setBall(x, z, y) { ball.position.set(x, y == null ? 1.4 : y, z); }
 
+  // ボールマーカー（リング＋ビーム）の色を変える。成功=緑 / 失敗=赤 / 通常=黄。
+  // ヘッドレスのモックは material.color を持たないためガードする（見た目のみ）。
+  function setMarkerColor(hex) {
+    if (!ballMarker || !ballMarker.children) return;
+    for (var i = 0; i < ballMarker.children.length && i < 2; i++) {
+      var m = ballMarker.children[i].material;
+      if (m && m.color && m.color.set) m.color.set(hex);
+    }
+  }
+
   function outcome(formation, play) {
     var ctx = {
       rbSpeed:  statOf(rb, "speed"),
       olPower:  teamStat(offense, "OL", "power"),
       wrCatch:  statOf(wr, "catch"),
       wrSpeed:  statOf(wr, "speed"),
-      tapedRole: state.taped ? state.taped.role : null
+      tapedRole: state.taped ? state.taped.role : null,
+      coverage: state.defCoverage || null
     };
     return window.BoxelGame.outcome(formation, play, ctx);
   }
@@ -171,11 +188,12 @@
     o.endZ = endZ;
     var dur, kind;
     if (play === "run") { kind = "run"; carrier = rb; var sp = (carrier.userData.stats && carrier.userData.stats.speed) || 6; dur = (1.0 + o.yards * 0.04) * (1.15 - sp * 0.03); }
-    else { kind = "pass"; dur = 0.9; carrier = wr; }
+    else { kind = "pass"; carrier = wr; dur = 0.85 + o.yards * 0.025; }   // 距離に応じて時間を伸ばす
 
     // 初期位置を保存し、ライン攻防・タックラーを事前計算
     offense.forEach(function (p) { p.userData.px0 = p.position.x; p.userData.pz0 = p.position.z; p.position.y = 0; p.rotation.x = 0; p.rotation.z = 0; });
     defense.forEach(function (p) { p.userData.px0 = p.position.x; p.userData.pz0 = p.position.z; p.position.y = 0; p.rotation.x = 0; p.rotation.z = 0; });
+    setMarkerColor(0xffe14d);   // プレー開始は中立色（黄）に戻す
     var olPower = teamStat(offense, "OL", "power");
     var dPower  = defenseStat("power");
     var tacklerIdx = window.BoxelGame.nearestDefenderIndex(
@@ -189,7 +207,26 @@
       wr.position.z = state.los; wr.position.x = (state.formation === "shotgun" || state.formation === "single") ? 11 : 6;
       anim.wrFromZ = wr.position.z; anim.wrFromX = wr.position.x;
       anim.ballFrom = qb.position.clone();
-      anim.catchPos = new THREE.Vector3(o.complete ? lerp(anim.wrFromX, 2, 0.6) : anim.wrFromX, 1.4, o.complete ? endZ : Math.min(state.los + 12, endZ + 8));
+      // 投球(空中)とYAC(捕って走る)の時間配分を距離比で決める（捕球地点でのワープを防ぐ）
+      var airYards = Math.min(o.yards, 18);
+      var throwDist = airYards + 6;                    // QB位置からの空中距離
+      var yac = Math.max(0, o.yards - airYards);
+      anim.throwFrac = Math.max(0.45, Math.min(0.85, throwDist / (throwDist + yac)));
+      // 受け手の走路(wrTarget)とボールの落下点(ballLand)を分離する。
+      if (o.complete) {
+        var cx = lerp(anim.wrFromX, 2, 0.6);
+        // 空中の飛距離は最大18ヤード（人間の限界）。残りは捕ってから走る(YAC)。
+        var catchZ = state.los + Math.min(o.yards, 18);
+        anim.wrTarget = new THREE.Vector3(cx, 1.4, catchZ);
+        anim.ballLand = anim.wrTarget.clone();                                   // この地点でキャッチ
+      } else if (o.reason === "overthrow") {
+        anim.ballLand = new THREE.Vector3(anim.wrFromX, 0.4, state.los + 4);     // 球は手前に落ちて届かない
+        anim.wrTarget = new THREE.Vector3(anim.wrFromX, 1.4, state.los + 14);    // 受け手は先へ走り抜ける
+      } else {
+        var dz = Math.min(state.los + 12, state.los + 8);
+        anim.wrTarget = new THREE.Vector3(anim.wrFromX, 1.4, dz);
+        anim.ballLand = anim.wrTarget.clone();                                   // 球は受け手の所まで届いて足元へ
+      }
     }
     state.phase = "animating";
     setCards([]);
@@ -200,7 +237,7 @@
     recoverTape();
     var gained = Math.max(0, Math.round(ball.position.z - state.los));
     if (o.turnover) {
-      setBubble("ホイッスル先生：" + o.msg + " 切り替えていこう！");
+      setBubble("ホイッスル先生：" + o.msg + " パスを相手に取られたので<b>攻守交代</b>。今度はキミが守備、取り返そう！");
       endPossession(0); return;
     }
     if (ball.position.z >= GOAL_FAR - 0.5) {
@@ -218,7 +255,7 @@
     } else {
       state.down += 1;
       if (state.down > 4) {
-        setBubble("ホイッスル先生：" + note + " 4回で届かず、攻守交代。次はきっといける！");
+        setBubble("ホイッスル先生：" + note + " <b>4回のチャンスで10ヤードに届かず、攻守交代</b>。今度はキミが守備だよ。");
         endPossession(0); return;
       }
       var h = "ホイッスル先生：" + note + " 残り" + state.toGo + "ヤード。";
@@ -229,59 +266,192 @@
   }
 
   // 攻守交代：守備フェーズへ移行する
+  // 直前に出た「なぜ攻守交代したか」の説明を読む時間をとってから守備選択へ進む（教育目的）
   function endPossession(pinBonus) {
     state.mode = "defense";
     state.defLos = state.los;
     state.defPin = pinBonus || 0;
     state.cpuStyle = window.BoxelGame.pickCpuStyle();
-    state.phase = "formation";
-    setBubble("ホイッスル先生：守備の番！ 相手を止めよう。<b>守備隊形</b>を選んで。");
-    chooseDefenseUI();
+    state.phase = "animating";   // 説明表示中は操作不可（カードを出さない）
+    updateHUD();
+    waitContinue(startOppPossession);
   }
 
-  function chooseDefenseUI() {
+  // ===== 相手（CPU）の攻撃：あなたと同じ4ダウン制。毎ダウン守りの作戦を選ぶ。=====
+  function startOppPossession() {
+    state.drive += 1;                 // この攻守交代を1ドライブとして数える
+    state.oppLos = state.defLos;
+    state.oppDown = 1;
+    state.oppToGo = 10;
+    oppDownUI();
+  }
+
+  function oppYardInfo() {
+    var toGoal = Math.max(0, Math.round(state.oppLos - GOAL_NEAR));
+    return "相手 " + ordinal(state.oppDown) + " & " + Math.max(0, state.oppToGo) + "（ゴールまで" + toGoal + "ヤード）";
+  }
+
+  // 1段目：守りの構え（フロント）。攻撃の「隊形」と対称。
+  function oppDownUI() {
+    state.phase = "formation";
+    placeOppFormation();              // 相手=攻撃 / 味方=守備 に整列
+    updateHUD();
+    setBubble("ホイッスル先生：" + oppYardInfo() + "。まず<b>守りの構え</b>は？");
     setCards([
-      { ico:"🛡️", t:"ラン重視", d:"中央を固めて走りを止める", fn:function(){ pickDefenseTactic("runStop"); } },
-      { ico:"⚖️", t:"バランス", d:"ランもパスも無難に", fn:function(){ pickDefenseTactic("balanced"); } },
-      { ico:"🪁", t:"パス重視", d:"後ろを厚くしてパスを防ぐ", fn:function(){ pickDefenseTactic("passDef"); } },
-      { ico:"🧱", t:"ゴールライン", d:"密集して短い走りを止める", fn:function(){ pickDefenseTactic("goalLine"); } }
+      { ico: "🛡️", t: "ラン重視", d: "中央を固める。ランを止めやすい", fn: function () { oppPickFront("runStop"); } },
+      { ico: "⚖️", t: "バランス", d: "ランもパスも無難に守る", fn: function () { oppPickFront("balanced"); } },
+      { ico: "🪁", t: "パス重視", d: "後ろを厚く。パスを防ぎやすい", fn: function () { oppPickFront("passDef"); } }
     ]);
   }
-  function pickDefenseTactic(front) {
-    setBubble("ホイッスル先生：<b>戦術</b>は？");
+
+  // 2段目：守り方（カバレッジ）。攻撃の「プレー」と対称。
+  function oppPickFront(front) {
+    state.defFront = front;
+    setBubble("ホイッスル先生：次に<b>守り方（作戦）</b>を選ぼう！");
     setCards([
-      { ico:"✋", t:"通常", d:"基本の守り", fn:function(){ resolveDefense(front, "normal"); } },
-      { ico:"⚡", t:"ブリッツ", d:"突っ込んで奪う。当たれば好機、外せば手薄", fn:function(){ resolveDefense(front, "blitz"); } },
-      { ico:"🕸️", t:"ゾーン", d:"大きいのを防ぐ堅実な守り", fn:function(){ resolveDefense(front, "zone"); } }
+      { ico: "🧲", t: "マン", d: "受け手に張り付く。ショートに強い", fn: function () { oppPickCoverage("man"); } },
+      { ico: "🕸️", t: "ゾーン", d: "後ろを広く守る。ロングに強い", fn: function () { oppPickCoverage("zone"); } },
+      { ico: "⚡", t: "ブリッツ", d: "前に詰めて突っ込む。ランに強い", fn: function () { oppPickCoverage("blitz"); } }
     ]);
   }
-  function resolveDefense(front, tactic) {
+
+  function oppPickCoverage(coverage) {
     setCards([]);
     state.phase = "animating";
-    state.drive += 1;
-    var dPower = defenseStat("power");
-    var dSpeed = defenseStat("speed");
-    var res = window.BoxelGame.defenseDrive({
-      front: front, tactic: tactic, los: state.defLos, pinBonus: state.defPin,
-      dPower: dPower, dSpeed: dSpeed, cpuStyle: state.cpuStyle
-    });
-    if (res.turnoverWon) {
-      setBubble("ホイッスル先生：" + res.msg + " 味方ボール！");
-    } else {
-      state.away += res.points;
-      setBubble("ホイッスル先生：" + res.msg);
-      if (res.points > 0) flashScore();
+    var cpuPlay = window.BoxelGame.pickCpuPlay({ down: state.oppDown, toGo: state.oppToGo, cpuStyle: state.cpuStyle });
+    var ctx = {
+      rbSpeed: defenseStat("speed"), olPower: defenseStat("power"),
+      wrCatch: defenseStat("catch"), wrSpeed: defenseStat("speed"),
+      coverage: coverage, tapedRole: null
+    };
+    var r = window.BoxelGame.outcome("single", cpuPlay, ctx);   // カバレッジ(三角)で1プレーを解決
+    var gain = (r.complete === false) ? 0 : r.yards;
+    // 守りの構え（フロント）= 二段目の読み。ラン重視/パス重視で相手の得意手を抑える。
+    var fmult = 1;
+    if (state.defFront === "runStop")      fmult = (cpuPlay === "run") ? 0.5 : 1.15;
+    else if (state.defFront === "passDef") fmult = (cpuPlay !== "run") ? 0.55 : 1.15;
+    gain = Math.max(0, Math.round(gain * fmult));
+    var startZ = state.oppLos;
+    var endZ = Math.max(GOAL_NEAR, startZ - gain);              // 相手は自陣ゴール(-z)へ前進
+    var td = !r.turnover && endZ <= GOAL_NEAR + 0.5;
+    startDefensePlay(startZ, endZ, td, function () { oppAfterPlay(r, gain, endZ, td, cpuPlay); });
+  }
+
+  function oppAfterPlay(r, gain, endZ, td, cpuPlay) {
+    var pn = playName(cpuPlay);
+    if (r.turnover) {                                            // インターセプト＝あなたが奪い返す
+      setBubble("ホイッスル先生：" + r.msg + " <b>ボールを奪い返した！</b> あなたの攻撃だよ！");
+      waitContinue(function () { concludeOppPossession(Math.round(endZ)); });
+      return;
     }
-    updateHUD();
-    setTimeout(function () {
-      if (state.drive >= MAX_DRIVES) { gameOver(); return; }
-      recoverTape();
-      state.mode = "offense";
-      state.down = 1; state.toGo = 10;
-      state.los = res.turnoverWon ? Math.min(70, state.defLos) : 40;
-      state.formation = null; state.phase = "formation";
-      placeFormation("single"); updateHUD(); chooseFormationUI();
-    }, 1500);
+    if (td) {
+      state.away += 7; flashScore();
+      setBubble("ホイッスル先生：相手の" + pn + "が決まって<b>タッチダウン…</b> 切り替えていこう！");
+      waitContinue(function () { concludeOppPossession(40); });
+      return;
+    }
+    state.oppLos = endZ;
+    state.oppToGo -= gain;
+    if (state.oppToGo <= 0) {
+      state.oppDown = 1; state.oppToGo = 10;
+      setBubble("ホイッスル先生：相手の" + pn + "で" + gain + "ヤード、<b>相手にファーストダウン</b>を許した…！");
+      waitContinue(oppDownUI);
+    } else {
+      state.oppDown += 1;
+      if (state.oppDown > 4) {
+        setBubble("ホイッスル先生：<b>4ダウン守り切った！</b> ナイスディフェンス！ あなたの攻撃だよ！");
+        waitContinue(function () { concludeOppPossession(Math.round(state.oppLos)); });
+      } else {
+        setBubble("ホイッスル先生：相手の" + pn + "で" + gain + "ヤード。" + oppYardInfo() + "、まだ守れる！");
+        waitContinue(oppDownUI);
+      }
+    }
+  }
+
+  function concludeOppPossession(yourLos) {
+    if (state.drive >= MAX_DRIVES) { gameOver(); return; }
+    recoverTape();
+    state.mode = "offense";
+    state.down = 1; state.toGo = 10;
+    state.los = Math.min(80, Math.max(15, yourLos));
+    state.formation = null; state.phase = "formation";
+    placeFormation("single"); updateHUD(); chooseFormationUI();
+  }
+
+  // 相手=攻撃側 / 味方=守備側 に整列（見せるだけ）
+  function placeOppFormation() {
+    var spread = [-9, -4.5, 0, 4.5, 9];
+    var oppLos = state.oppLos;
+    for (var d = 0; d < defense.length; d++) {
+      defense[d].position.set(spread[d], 0, oppLos + 1);
+      defense[d].rotation.set(0, Math.PI, 0);   // 自陣ゴール(-z)方向を向く
+    }
+    var dline = Math.max(GOAL_NEAR + 2, oppLos - 7);
+    for (var o = 0; o < offense.length; o++) {
+      offense[o].position.set(spread[o], 0, dline);
+      offense[o].rotation.set(0, 0, 0);         // 相手(+z)方向を向く
+    }
+    setBall(0, oppLos - 0.3, 1.3);
+  }
+
+  // 相手の1プレーを可視化する（startZ→endZ へ前進、味方が追って止める/得点）。
+  function startDefensePlay(startZ, endZ, td, onDone) {
+    var carrier = null;
+    for (var i = 0; i < defense.length; i++) { if (defense[i].userData.role === "CB") { carrier = defense[i]; break; } }
+    if (!carrier) carrier = defense[0];
+    carrier.position.set(0, 0, startZ);
+    var blockers = defense.filter(function (x) { return x !== carrier; });
+    defAnim = { t: 0, dur: 1.1, phase: "run", startZ: startZ, endZ: endZ, carrier: carrier, blockers: blockers, td: !!td, onDone: onDone };
+    setBall(carrier.position.x, carrier.position.z - 0.3, 1.3);
+  }
+
+  function nearestHome(c) {
+    var best = offense[0], bd = Infinity;
+    offense.forEach(function (o) {
+      var dx = o.position.x - c.position.x, dz = o.position.z - c.position.z, d2 = dx * dx + dz * dz;
+      if (d2 < bd) { bd = d2; best = o; }
+    });
+    return best;
+  }
+
+  function updateDefenseAnim(dt) {
+    if (!defAnim) return;
+    var c = defAnim.carrier;
+    if (defAnim.phase === "run") {
+      defAnim.t += dt;
+      var p = Math.min(1, defAnim.t / defAnim.dur);
+      c.position.z = lerp(defAnim.startZ, defAnim.endZ, p);
+      c.position.y = Math.abs(Math.sin(p * 16)) * 0.22;
+      defAnim.blockers.forEach(function (b) {
+        b.position.z = lerp(defAnim.startZ + 1, defAnim.endZ + 2, p);   // ブロッカーも前進
+      });
+      offense.forEach(function (o) {                                     // 味方がキャリアを追う
+        var tgt = window.BoxelGame.pursuitTarget(
+          { x: o.position.x, z: o.position.z }, { x: c.position.x, z: c.position.z }, dt * 2.4);
+        o.position.x = tgt.x; o.position.z = tgt.z;
+        o.rotation.y = Math.atan2(c.position.x - o.position.x, c.position.z - o.position.z);
+      });
+      setBall(c.position.x, c.position.z - 0.3, 1.3);
+      if (p >= 1) { defAnim.phase = "end"; defAnim.endT = 0; defAnim.tackler = nearestHome(c); }
+      return;
+    }
+    // phase === "end": タックル/得点の決めの見た目
+    defAnim.endT += dt;
+    var ep = Math.min(1, defAnim.endT / 0.45);
+    if (defAnim.td) {
+      c.position.y = Math.abs(Math.sin(ep * Math.PI * 2)) * (1 - ep) * 1.2;   // TD: 喜ぶ
+    } else {
+      c.rotation.x = -1.2 * ep;                                              // 味方が止めて倒す
+      c.position.y = Math.max(0, 0.2 * (1 - ep));
+      var tk = defAnim.tackler;
+      if (tk) {
+        tk.position.x = lerp(tk.position.x, c.position.x, ep * 0.4);
+        tk.position.z = lerp(tk.position.z, c.position.z + 0.9, ep * 0.4);
+        tk.rotation.x = -0.4 * ep;
+      }
+    }
+    setBall(c.position.x, c.position.z - 0.3, Math.max(0.3, 1.2 - ep));
+    if (ep >= 1) { var cb = defAnim.onDone; defAnim = null; if (cb) cb(); }
   }
 
   function gameOver() {
@@ -309,7 +479,7 @@
     placeFormationLater();
   }
   function placeFormationLater() {
-    setTimeout(function () { chooseFormationUI(); }, 1300);
+    waitContinue(function () { chooseFormationUI(); });
   }
 
   // けが・テーピング補助（低頻度。次の1プレーだけ担当プレーが軽く不利になる）
@@ -344,6 +514,22 @@
   }
   function setBubble(html) { document.getElementById("bubble").innerHTML = html; }
 
+  // メッセージを読み終えるまで待ってから次へ進む。「タップで次へ」クリックで即進行、
+  // 押されなくても長め(30秒)の安全フォールバックで自動進行する（ヘッドレスでは即時実行）。
+  function waitContinue(fn) {
+    if (continueTimer) { clearTimeout(continueTimer); continueTimer = null; }
+    var tap = document.getElementById("tapNext");
+    var done = false;
+    function go() {
+      if (done) return; done = true;
+      if (continueTimer) { clearTimeout(continueTimer); continueTimer = null; }
+      if (tap) { tap.onclick = null; tap.style.display = "none"; }
+      fn();
+    }
+    if (tap) { tap.style.display = "block"; tap.onclick = go; }
+    continueTimer = setTimeout(go, 30000);
+  }
+
   function setCards(arr) {
     var c = document.getElementById("cards"); c.innerHTML = "";
     arr.forEach(function (o) {
@@ -373,9 +559,38 @@
     ]);
   }
 
+  // 守備がカバレッジを選び、配置で「気配（テル）」を見せる
+  function applyCoverageTell(cov) {
+    var los = state.los;
+    var movers = defense.filter(function (d) { return d.userData.role !== "DL"; });
+    for (var i = 0; i < movers.length; i++) {
+      if (cov === "blitz") movers[i].position.z = los + 2;       // 前に詰める
+      else if (cov === "zone") movers[i].position.z = los + 9;   // 後ろに下がる
+      else movers[i].position.z = los + 5;                       // man: 受け手の前
+    }
+    if (cov === "man") {
+      // CB/LB を攻撃スキル選手（WR/RB/QB）の横位置に合わせて張り付く
+      var skill = offense.filter(function (o) {
+        var r = o.userData.role; return r === "WR" || r === "RB" || r === "QB";
+      });
+      for (var j = 0; j < movers.length; j++) {
+        var t = skill[j % skill.length];
+        if (t) movers[j].position.x = t.position.x;
+      }
+    }
+  }
+  function coverageTellText(cov) {
+    if (cov === "blitz") return "前に詰めて<b>突っ込む構え（ブリッツ）</b>みたい。素早い手が効きそう。";
+    if (cov === "man")   return "受け手に<b>ぴったり張り付いてる（マン）</b>。足で振り切れるかな。";
+    return "後ろに<b>広がって守る構え（ゾーン）</b>。手薄なのはどこ？";
+  }
+
   function pickFormation(f) {
     state.formation = f; placeFormation(f); state.phase = "play";
-    setBubble("<b>" + f.toUpperCase() + "</b> だね！ 次に<b>プレー</b>を選ぼう。");
+    // 守備がこの隊形に反応してカバレッジを選び、テルを見せる（読み合い）
+    state.defCoverage = window.BoxelGame.pickDefenseCoverage({ down: state.down, toGo: state.toGo });
+    applyCoverageTell(state.defCoverage);
+    setBubble("<b>" + f.toUpperCase() + "</b> だね！ 相手は" + coverageTellText(state.defCoverage) + " <b>プレー</b>を選ぼう。");
     var cards = [
       { ico: "🏃", t: "ラン", d: "走って前進。確実だが小さめ", fn: function () { startPlay("run"); } },
       { ico: "✋", t: "ショートパス", d: "近くへ短く。成功しやすい", fn: function () { startPlay("short"); } },
@@ -419,7 +634,18 @@
   }
 
   function updateHUD() {
-    document.getElementById("downdist").textContent = ordinal(state.down) + " & " + Math.max(0, state.toGo);
+    if (state.mode === "defense") {
+      var ot = Math.max(0, state.oppToGo);
+      document.getElementById("downdist").textContent =
+        "守備中 ・ 相手 " + ordinal(state.oppDown) + " & " + ot + "（あと" + (5 - state.oppDown) + "回止めれば取り返す）";
+    } else {
+      var toGo = Math.max(0, state.toGo);
+      var remain = 5 - state.down;   // 今を含めた残り挑戦回数（4ダウン制）
+      var plain = state.down >= 4
+        ? "ラストチャンス！あと" + toGo + "ヤード"
+        : "のこり" + remain + "回であと" + toGo + "ヤード";
+      document.getElementById("downdist").textContent = ordinal(state.down) + " & " + toGo + " ・ " + plain;
+    }
     var yl = Math.round(state.los - GOAL_NEAR);
     var side = yl <= 50 ? "自陣" + yl : "敵陣" + (100 - yl);
     document.getElementById("yardline").textContent = side + "ヤード ・ シリーズ " + Math.min(state.drive + 1, MAX_DRIVES) + "/" + MAX_DRIVES;
@@ -456,23 +682,41 @@
       carrier.position.z = z; carrier.position.y = Math.abs(Math.sin(p * 18)) * 0.25;
       setBall(carrier.position.x, z + 0.3, 1.3);
     } else {
-      var bp;
-      if (p < 0.78) {
-        var pp = p / 0.78;
-        bp = anim.ballFrom.clone().lerp(anim.catchPos, pp);
-        bp.y = lerp(anim.ballFrom.y, anim.catchPos.y, pp) + Math.sin(pp * Math.PI) * 7;
-        wr.position.x = lerp(anim.wrFromX, anim.catchPos.x, pp);
-        wr.position.z = lerp(anim.wrFromZ, anim.catchPos.z, pp);
+      var tf = anim.throwFrac || 0.78;
+      if (p < tf) {
+        // 投球フェーズ: ボールは ballLand へ弧を描いて飛ぶ／受け手は wrTarget へ走る（別軌道）
+        var pp = p / tf;
+        var bx0 = lerp(anim.ballFrom.x, anim.ballLand.x, pp);
+        var bz0 = lerp(anim.ballFrom.z, anim.ballLand.z, pp);
+        var by0 = lerp(anim.ballFrom.y, anim.ballLand.y, pp) + Math.sin(pp * Math.PI) * 7;
+        wr.position.x = lerp(anim.wrFromX, anim.wrTarget.x, pp);
+        wr.position.z = lerp(anim.wrFromZ, anim.wrTarget.z, pp);
         wr.position.y = Math.abs(Math.sin(pp * 16)) * 0.2;
-        setBall(bp.x, bp.z, bp.y);
+        setBall(bx0, bz0, by0);
       } else {
+        var pp2 = (p - tf) / (1 - tf);
         if (anim.o.complete) {
-          var pp2 = (p - 0.78) / 0.22;
-          var fz = lerp(anim.catchPos.z, anim.endZ, pp2);
-          wr.position.z = fz; wr.position.y = Math.abs(Math.sin(pp2 * 14)) * 0.2;
-          setBall(wr.position.x, fz + 0.3, 1.3);
+          // 成功: マーカー緑＋キャッチでひと跳ね→ボールを持って前進
+          setMarkerColor(0x35c759);
+          var fz = lerp(anim.wrTarget.z, anim.endZ, pp2);
+          var catchHop = Math.max(0, 0.25 - pp2) * 4;        // 捕った瞬間にジャンプ
+          wr.position.z = fz; wr.position.y = Math.abs(Math.sin(pp2 * 14)) * 0.2 + catchHop;
+          setBall(wr.position.x, fz + 0.3, 1.4 + catchHop);
+        } else if (anim.o.reason === "overthrow") {
+          // 届かず: マーカー赤＋受け手は先へ走り抜け、ボールは手前(ballLand)で小さく弾む
+          setMarkerColor(0xff3b30);
+          wr.position.z = lerp(anim.wrTarget.z, anim.wrTarget.z + 4, pp2);   // 受け手はさらに前へ
+          wr.position.y = Math.abs(Math.sin(pp2 * 12)) * 0.18;
+          var oy = Math.abs(Math.sin(pp2 * Math.PI * 2)) * (1 - pp2) * 1.2 + 0.3;
+          setBall(anim.ballLand.x, anim.ballLand.z, oy);
         } else {
-          setBall(anim.catchPos.x, anim.catchPos.z, Math.max(0.3, anim.catchPos.y - (p - 0.78) * 9));
+          // 落球/はたき落とし: マーカー赤＋ボールが受け手の足元(ballLand)で2回バウンド
+          setMarkerColor(0xff3b30);
+          var bx = anim.ballLand.x + pp2 * 1.6;
+          var bz = anim.ballLand.z + pp2 * 0.8;
+          var by = Math.abs(Math.sin(pp2 * Math.PI * 2)) * (1 - pp2) * 2.2 + 0.3;  // 減衰バウンド
+          wr.position.y = 0; wr.rotation.x = -0.15;          // 受け手はがっくり（前傾）
+          setBall(bx, bz, by);
         }
       }
     }
@@ -641,6 +885,7 @@
     requestAnimationFrame(animate);
     var dt = Math.min(0.05, clock.getDelta());
     updateAnim(dt);
+    updateDefenseAnim(dt);
     ballMarker.position.set(ball.position.x, ball.position.y, ball.position.z);
     var t = clock.elapsedTime;
     ballMarker.children[0].rotation.z = t * 2;

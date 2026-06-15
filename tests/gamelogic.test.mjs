@@ -122,6 +122,39 @@ var ptsWithPin = drivePoints(20, 0.4);
 assert("相手ドライブ: pinBonus=0.4 で平均得点が抑制される", ptsWithPin < ptsNoPin);
 
 // ------------------------------------------------------------
+// 6. 読み合い: coverageMatchup の三角関係
+// ------------------------------------------------------------
+assert("matchup: run は zone に相性◎(edge=1)",   BG.coverageMatchup("run", "zone").edge === 1);
+assert("matchup: run は blitz に相性△(edge=-1)",  BG.coverageMatchup("run", "blitz").edge === -1);
+assert("matchup: short は blitz に相性◎(edge=1)", BG.coverageMatchup("short", "blitz").edge === 1);
+assert("matchup: short は man に相性△(edge=-1)",  BG.coverageMatchup("short", "man").edge === -1);
+assert("matchup: long は man に相性◎(edge=1)",    BG.coverageMatchup("long", "man").edge === 1);
+assert("matchup: long は zone に相性△(edge=-1)",  BG.coverageMatchup("long", "zone").edge === -1);
+assert("matchup: coverage=null は edge=0(後方互換)", BG.coverageMatchup("run", null).edge === 0);
+
+// ------------------------------------------------------------
+// 7. 読み合い: 相性が結果へ有意に効く
+// ------------------------------------------------------------
+function shortRate(coverage, n) {
+  var ok = 0;
+  for (var i = 0; i < n; i++) {
+    if (BG.outcome("single", "short", { rbSpeed: 6, olPower: 6, wrCatch: 6, wrSpeed: 6, coverage: coverage }).complete) ok++;
+  }
+  return ok / n;
+}
+var runVsZone  = avgYards("single", "run", { rbSpeed: 6, olPower: 6, wrCatch: 6, wrSpeed: 6, coverage: "zone" }, N);
+var runVsBlitz = avgYards("single", "run", { rbSpeed: 6, olPower: 6, wrCatch: 6, wrSpeed: 6, coverage: "blitz" }, N);
+assert("読み合い: ラン対ゾーン(◎)の平均ヤード > ラン対ブリッツ(△)", runVsZone > runVsBlitz);
+
+var shortVsBlitz = shortRate("blitz", N);   // 相性◎
+var shortVsMan   = shortRate("man", N);     // 相性△
+assert("読み合い: ショート対ブリッツ(◎)の成功率 > ショート対マン(△)", shortVsBlitz > shortVsMan);
+
+// 後方互換: coverage 未指定は従来分布（互角扱い）と一致方向
+var shortNeutral = shortRate(null, N);
+assert("読み合い: coverage未指定の成功率は ◎ と △ の間", shortNeutral < shortVsBlitz && shortNeutral > shortVsMan);
+
+// ------------------------------------------------------------
 // 終了
 // ------------------------------------------------------------
 console.log("");
