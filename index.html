@@ -90,6 +90,7 @@
   function byRole(r) { for (var i = 0; i < offense.length; i++) { if (offense[i].userData.role === r) return offense[i]; } return null; }
   function statOf(p, key) { return (p && p.userData && p.userData.stats && p.userData.stats[key]) || 6; }
   function teamStat(list, role, key) { var s = 0, n = 0; list.forEach(function (p) { if (p.userData.role === role) { s += statOf(p, key); n++; } }); return n ? s / n : 6; }
+  function defenseStat(key) { var s = 0; defense.forEach(function (p) { s += statOf(p, key); }); return defense.length ? s / defense.length : 6; }
   function bestKicker() { var b = offense[0], bv = -1; offense.forEach(function (p) { var k = statOf(p, "kick"); if (k > bv) { bv = k; b = p; } }); return b; }
 
   function box(w, h, d, color, x, y, z) {
@@ -138,14 +139,14 @@
     var roles = ["owl", "rabbit", "squirrel", "bear", "rhino"];
     for (var i = 0; i < offense.length; i++) {
       offense[i].position.set(spread[i], 0, state.los);
-      offense[i].rotation.y = 0;
+      offense[i].rotation.set(0, 0, 0);
     }
     qb = byRole("QB") || offense[0]; rb = byRole("RB") || offense[1]; wr = byRole("WR") || offense[2];
     if (formation === "shotgun") { qb.position.set(0, 0, state.los - 6); wr.position.set(11, 0, state.los); }
     else if (formation === "i") { qb.position.set(0, 0, state.los - 2.5); rb.position.set(0, 0, state.los - 6.5); }
     else if (formation === "single") { qb.position.set(0, 0, state.los - 3); rb.position.set(0, 0, state.los - 6); wr.position.set(11, 0, state.los); }
     else if (formation === "goal") { for (var k = 0; k < offense.length; k++) offense[k].position.set(spread[k] * 0.5, 0, state.los); qb.position.set(0, 0, state.los - 2); rb.position.set(0, 0, state.los - 4); }
-    for (var d = 0; d < defense.length; d++) { defense[d].position.set(spread[d], 0, state.los + 4 + (d % 2)); defense[d].rotation.y = Math.PI; }
+    for (var d = 0; d < defense.length; d++) { defense[d].position.set(spread[d], 0, state.los + 4 + (d % 2)); defense[d].rotation.set(0, Math.PI, 0); }
     setBall(qb.position.x, qb.position.z);
   }
 
@@ -173,10 +174,10 @@
     else { kind = "pass"; dur = 0.9; carrier = wr; }
 
     // 初期位置を保存し、ライン攻防・タックラーを事前計算
-    offense.forEach(function (p) { p.userData.px0 = p.position.x; p.userData.pz0 = p.position.z; });
-    defense.forEach(function (p) { p.userData.px0 = p.position.x; p.userData.pz0 = p.position.z; });
+    offense.forEach(function (p) { p.userData.px0 = p.position.x; p.userData.pz0 = p.position.z; p.position.y = 0; p.rotation.x = 0; p.rotation.z = 0; });
+    defense.forEach(function (p) { p.userData.px0 = p.position.x; p.userData.pz0 = p.position.z; p.position.y = 0; p.rotation.x = 0; p.rotation.z = 0; });
     var olPower = teamStat(offense, "OL", "power");
-    var dPower  = teamStat(defense, "DF", "power");
+    var dPower  = defenseStat("power");
     var tacklerIdx = window.BoxelGame.nearestDefenderIndex(
       { x: 0, z: endZ },
       defense.map(function (d) { return { x: d.position.x, z: d.position.z }; })
@@ -258,8 +259,8 @@
     setCards([]);
     state.phase = "animating";
     state.drive += 1;
-    var dPower = teamStat(defense, "DF", "power");
-    var dSpeed = teamStat(defense, "DF", "speed");
+    var dPower = defenseStat("power");
+    var dSpeed = defenseStat("speed");
     var res = window.BoxelGame.defenseDrive({
       front: front, tactic: tactic, los: state.defLos, pinBonus: state.defPin,
       dPower: dPower, dSpeed: dSpeed, cpuStyle: state.cpuStyle
@@ -492,29 +493,95 @@
       });
     }
 
-    // 守備全体の追走: pursuitTarget でキャリアへ寄せる
+    // 守備の追走（役割で速度を変える）。タックル演出フェーズ中は追走を止める。
     var carrierNow = currentCarrier;
-    for (var i = 0; i < defense.length; i++) {
-      var def = defense[i];
-      var isTackler = (anim.tacklerIdx === i);
-      var pursuitT;
-      if (isTackler && p > 0.8) {
-        // タックラーは終盤で強く収束
-        pursuitT = dt * 4.0;
-      } else {
-        // 通常追走（弱め）
-        pursuitT = dt * 1.5;
+    if (anim.phase !== "tackle") {
+      for (var i = 0; i < defense.length; i++) {
+        var def = defense[i];
+        var role = def.userData.role;
+        var isTackler = (anim.tacklerIdx === i);
+        // DL（ライン担当）はライン攻防に専念し追走しない（タックラー指名時を除く）
+        if (role === "DL" && !isTackler) continue;
+        // CB=俊足で強く追う / LB ほか=中盤で追う
+        var pursuitT = dt * (role === "CB" ? 3.2 : 2.6);
+        if (isTackler && p > 0.6) {
+          // タックラーは終盤で強く収束
+          pursuitT = dt * 6.0;
+        }
+        var tgt = window.BoxelGame.pursuitTarget(
+          { x: def.position.x, z: def.position.z },
+          { x: carrierNow.position.x, z: carrierNow.position.z },
+          pursuitT
+        );
+        def.position.x = tgt.x;
+        def.position.z = tgt.z;
+        // 進行方向（キャリア）へ向き直す（後ろ向きに走らない）
+        def.rotation.y = Math.atan2(
+          carrierNow.position.x - def.position.x,
+          carrierNow.position.z - def.position.z
+        );
       }
-      var tgt = window.BoxelGame.pursuitTarget(
-        { x: def.position.x, z: def.position.z },
-        { x: carrierNow.position.x, z: carrierNow.position.z },
-        pursuitT
-      );
-      def.position.x = tgt.x;
-      def.position.z = tgt.z;
     }
 
-    if (p >= 1) { var o = anim.o; anim = null; setTimeout(function () { finalize(o); }, 350); }
+    if (p < 1) return;
+
+    // ===== プレー終了 → タックル/転倒の演出（位置・傾きのみ・結果ヤードは不変）=====
+    // 不成功パス／インターセプトはタックルしない（従来どおり一拍おいて確定）
+    var tackleable = (anim.kind === "run") || (anim.kind === "pass" && anim.o.complete);
+    if (!tackleable) {
+      var oInc = anim.o; anim = null; setTimeout(function () { finalize(oInc); }, 350); return;
+    }
+
+    if (anim.phase !== "tackle") {
+      anim.phase = "tackle";
+      anim.tackT = 0;
+      anim.carrierBaseY = carrierNow.position.y;
+      // ゴール到達（タッチダウン）は倒れず喜ぶ。それ以外は守備に止められて倒れる。
+      anim.isTD = anim.endZ >= GOAL_FAR - 0.5;
+      anim.tackled = !anim.isTD;
+      if (anim.tackled) {
+        // いま実際にいちばん近い守備をタックラーにする（見た目の当たりを保証）
+        anim.tacklerIdx = window.BoxelGame.nearestDefenderIndex(
+          { x: carrierNow.position.x, z: carrierNow.position.z },
+          defense.map(function (d) { return { x: d.position.x, z: d.position.z }; })
+        );
+        var tk = (anim.tacklerIdx >= 0) ? defense[anim.tacklerIdx] : null;
+        if (tk) {
+          anim.tkFromX = tk.position.x; anim.tkFromZ = tk.position.z; anim.tkFromY = tk.position.y;
+          tk.rotation.y = Math.atan2(carrierNow.position.x - tk.position.x,
+                                     carrierNow.position.z - tk.position.z);
+        }
+      }
+    }
+
+    anim.tackT += dt;
+    var tp = Math.min(1, anim.tackT / 0.6);
+    var tkr = (anim.tacklerIdx >= 0) ? defense[anim.tacklerIdx] : null;
+
+    if (anim.tackled) {
+      // --- 倒れる演出: 守備が当たりに行き、キャリアが転倒する ---
+      // 前半(〜0.35): タックラーがキャリアへ突っ込んで密着（当たり）
+      var hitP = Math.min(1, tp / 0.35);
+      if (tkr) {
+        tkr.position.x = lerp(anim.tkFromX, carrierNow.position.x, hitP);
+        tkr.position.z = lerp(anim.tkFromZ, carrierNow.position.z - 0.9, hitP);
+        tkr.position.y = anim.tkFromY + Math.sin(hitP * Math.PI) * 0.3;   // 踏み込み
+      }
+      // 当たり以降(0.2〜): キャリアが後ろ向きに倒れて地面に伏せる
+      var fallP = Math.max(0, Math.min(1, (tp - 0.2) / 0.8));
+      carrierNow.rotation.x = -1.35 * fallP;                              // あおむけに倒れる
+      carrierNow.rotation.z = Math.sin(tp * Math.PI * 2) * 0.2 * (1 - fallP);
+      carrierNow.position.y = anim.carrierBaseY + Math.sin(hitP * Math.PI) * 0.3 * (1 - fallP);
+      if (tkr) tkr.rotation.x = -0.5 * fallP;                            // のしかかる
+      setBall(carrierNow.position.x, carrierNow.position.z + 0.3, Math.max(0.3, 1.2 - fallP));
+    } else {
+      // --- 倒れない演出: タッチダウンで喜ぶ（小さくジャンプ・倒れない）---
+      var hop = Math.abs(Math.sin(tp * Math.PI * 2)) * (1 - tp);
+      carrierNow.position.y = anim.carrierBaseY + hop * 1.2;
+      setBall(carrierNow.position.x, carrierNow.position.z + 0.3, 1.2 + hop * 1.2);
+    }
+
+    if (tp >= 1) { var oFin = anim.o; anim = null; finalize(oFin); }
   }
 
   function updateTrail() {

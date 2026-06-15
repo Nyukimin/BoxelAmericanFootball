@@ -51,7 +51,10 @@
     WR: { label: "レシーバー（受け手）" },
     OL: { label: "ラインマン（守る役・押し込む）" },
     P:  { label: "パンター（蹴る役）" },
-    DF: { label: "ディフェンス（守備）" }
+    DF: { label: "ディフェンス（守備）" },
+    DL: { label: "ディフェンスライン（前で押し合う守備）" },
+    LB: { label: "ラインバッカー（中盤で走者を追う）" },
+    CB: { label: "コーナーバック（俊足でボールを追う）" }
   };
 
   // ===== パラメータのプリセット =====  選手の stats に名前で指定して使い回せる
@@ -75,12 +78,13 @@
   ];
 
   // ===== 守備チーム（相手）の編成 =====
+  // 役割分担: DL(ライン担当・押し合う) / LB(中盤で追走) / CB(俊足で追走)
   var DEFENSE = [
-    { name: "あいて1", role: "DF", animal: "wolf", fur: FUR.wolf, stats: "allround" },
-    { name: "あいて2", role: "DF", animal: "wolf", fur: FUR.wolf, stats: "speedy" },
-    { name: "あいて3", role: "DF", animal: "wolf", fur: FUR.wolf, stats: "power" },
-    { name: "あいて4", role: "DF", animal: "wolf", fur: FUR.wolf, stats: "allround" },
-    { name: "あいて5", role: "DF", animal: "wolf", fur: FUR.wolf, stats: "power" }
+    { name: "あいて1", role: "LB", animal: "wolf", fur: FUR.wolf, stats: "allround" },
+    { name: "あいて2", role: "CB", animal: "wolf", fur: FUR.wolf, stats: "speedy" },
+    { name: "あいて3", role: "DL", animal: "wolf", fur: FUR.wolf, stats: "power" },
+    { name: "あいて4", role: "LB", animal: "wolf", fur: FUR.wolf, stats: "allround" },
+    { name: "あいて5", role: "DL", animal: "wolf", fur: FUR.wolf, stats: "power" }
   ];
 
   // ===== マネージャー（撮影担当）の設定 =====
