@@ -39,6 +39,9 @@
   @keyframes tapPulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
   #helpWrap { top: 52px; right: 14px; pointer-events: auto; }
   #helpBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  #timeoutWrap { top: 92px; right: 14px; pointer-events: auto; }
+  #timeoutBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  #timeoutBtn:disabled { opacity: .45; cursor: default; }
   #help { position: absolute; inset: 0; background: rgba(20,30,16,.92); z-index: 20; display: none; overflow-y: auto; pointer-events: auto; padding: 24px 14px 40px; }
   #help .sheet { background: #fff; color: #2f4d22; max-width: 680px; margin: 0 auto; border-radius: 16px; padding: 22px; line-height: 1.6; }
   #help h2 { color: #2f6b3c; font-size: 24px; margin-bottom: 4px; }
@@ -78,6 +81,7 @@
   <button data-v="player">選手視点</button>
 </div>
 <div class="hud" id="helpWrap"><button id="helpBtn">？ ヘルプ</button></div>
+<div class="hud" id="timeoutWrap"><button id="timeoutBtn">タイムアウト 3</button></div>
 <div id="playerInfo"></div>
 
 <div id="help">
@@ -157,12 +161,16 @@
   var clock;
 
   var GOAL_NEAR = 10, GOAL_FAR = 110, MAX_DRIVES = 6;
+  var QUARTER_LENGTH = 90;   // クォーターあたりの秒数（テスト用短縮値）
+  var TWO_MIN_WARN = 30;     // 2分警告のしきい値（秒）
   var state = {
     los: 40, toGo: 10, down: 1, home: 0, away: 0, drive: 0,
     phase: "formation", formation: null, play: null, taped: null,
     mode: "offense", cpuStyle: null, defLos: 40, defPin: 0,
     oppLos: 40, oppDown: 1, oppToGo: 10, defFront: "balanced",
-    personnel: "balanced"
+    personnel: "balanced",
+    quarter: 1, clock: 90, timeoutsHome: 3, timeoutsAway: 3, twoMinWarned: false,
+    clockStopped: false, gameEnded: false
   };
   var hintsShown = {};
   var pendingTape = null, tapeCooldown = 2;
@@ -494,6 +502,26 @@
 
   function finalize(o) {
     recoverTape();
+    // アウトオブバウンズ判定（成功プレーのみ・低確率）。クロック停止になり消費小。
+    // テストは Math.random()=0 固定のため高乱数側で発火させ誤発火を防ぐ。
+    var oob = false;
+    if (o.complete && (o.reason === "run" || o.reason === "catch") && Math.random() > 0.92) {
+      oob = true;
+    }
+    // クロック消費: 成功（インバウンズ）は40秒で継続、それ以外（不成功/ターンオーバー/
+    // アウトオブバウンズ/得点/タイムアウト）はクロック停止扱いで消費小。
+    var costKind;
+    if (state.clockStopped) { costKind = "timeout"; state.clockStopped = false; }
+    else if (oob) { costKind = "oob"; }
+    else if (o.turnover) { costKind = "turnover"; }
+    else if (!o.complete) { costKind = "incomplete"; }
+    else if (o.reason === "run") { costKind = "run"; }
+    else if (o.reason === "catch") { costKind = "short_complete"; }
+    else { costKind = "incomplete"; }
+    if (oob) { setBubble("ホイッスル先生：ボールキャリアが<b>サイドラインの外（アウト）</b>へ！ クロックが止まったよ。"); }
+    tickClock(window.BoxelGame.playClockCost({ kind: costKind }));
+    // クロック切れで試合終了になった場合は以降の処理をスキップ
+    if (state.gameEnded) { return; }
     var delta = Math.round(ball.position.z - state.los);   // 符号つき前進（ロスは負）
     if (o.turnover) {
       setBubble("ホイッスル先生：" + o.msg + " パスを相手に取られたので<b>攻守交代</b>。今度はキミが守備、取り返そう！");
@@ -665,6 +693,15 @@
       coverage: coverage, tapedRole: null
     };
     var r = window.BoxelGame.outcome("single", cpuPlay, ctx);   // カバレッジ(三角)で1プレーを解決
+    // 相手プレーでもクロックを消費する（ランは40秒、パス不成功/ターンオーバーは6秒）
+    var oppCostKind;
+    if (r.turnover) { oppCostKind = "turnover"; }
+    else if (!r.complete) { oppCostKind = "incomplete"; }
+    else if (cpuPlay === "run") { oppCostKind = "run"; }
+    else { oppCostKind = "short_complete"; }
+    tickClock(window.BoxelGame.playClockCost({ kind: oppCostKind }));
+    // クロック切れで試合終了になった場合は以降の処理をスキップ
+    if (state.gameEnded) { return; }
     var gain = (r.complete === false) ? 0 : r.yards;
     // 守りの構え（フロント）= 二段目の読み。ラン重視/パス重視で相手の得意手を抑える。
     var fmult = 1;
@@ -715,7 +752,10 @@
   }
 
   function concludeOppPossession(yourLos) {
-    if (state.drive >= MAX_DRIVES) { gameOver(); return; }
+    // 試合終了済みの場合はスキップ
+    if (state.gameEnded) { return; }
+    // Q4（または延長Q5）終了後は試合終了
+    if (state.quarter > 4 || (state.quarter >= 4 && state.clock <= 0)) { gameOver(); return; }
     recoverTape();
     state.mode = "offense";
     state.down = 1; state.toGo = 10;
@@ -919,6 +959,7 @@
   }
 
   function gameOver() {
+    state.gameEnded = true;
     var s = document.getElementById("start");
     var res = state.home > state.away ? "勝ち！" : state.home < state.away ? "負け…" : "引き分け";
     s.querySelector("h1").textContent = "試合終了：" + res;
@@ -927,11 +968,70 @@
     s.style.display = "flex";
   }
 
+  // クォータークロックを進める。0以下になればクォーター終了処理を呼ぶ。
+  function tickClock(seconds) {
+    state.clock -= seconds;
+    // Q2/Q4 で残り TWO_MIN_WARN 秒を初めて切った場合のメッセージ
+    if (!state.twoMinWarned && state.clock < TWO_MIN_WARN && (state.quarter === 2 || state.quarter === 4)) {
+      state.twoMinWarned = true;
+      setBubble("ホイッスル先生：残り時間わずか！ ラスト" + TWO_MIN_WARN + "秒を切ったよ！");
+    }
+    if (state.clock <= 0) {
+      advanceQuarter();
+    }
+  }
+
+  // プレイヤーのタイムアウト。攻撃/守備どちらの局面でも使用可。
+  // 残数を1つ消費し、次のプレーでクロックを止める（消費小）。前後半3個ずつ。
+  function useTimeout() {
+    if (state.gameEnded) return;
+    if (state.timeoutsHome <= 0) {
+      setBubble("ホイッスル先生：もうタイムアウトは残ってないよ！");
+      return;
+    }
+    state.timeoutsHome -= 1;
+    state.clockStopped = true;   // 次のプレーはクロック停止扱い（消費小）
+    setBubble("ホイッスル先生：<b>タイムアウト！</b> クロックを止めたよ。残り" + state.timeoutsHome + "個。");
+    updateHUD();
+  }
+
+  // クォーターを進める。Q4 終了で試合終了（同点なら延長）。
+  function advanceQuarter() {
+    state.clock = 0;
+    if (state.quarter >= 4) {
+      if (state.home === state.away && state.quarter === 4) {
+        // 延長戦（Q5 扱い）
+        state.quarter = 5;
+        state.clock = QUARTER_LENGTH;
+        state.twoMinWarned = false;
+        setBubble("ホイッスル先生：同点！ <b>延長戦</b>突入！ もう一クォーター、決めにいこう！");
+        return;
+      }
+      gameOver();
+      return;
+    }
+    state.quarter++;
+    state.clock = QUARTER_LENGTH;
+    state.twoMinWarned = false;
+    if (state.quarter === 3) {
+      // ハーフタイム: タイムアウトリセット
+      state.timeoutsHome = 3;
+      state.timeoutsAway = 3;
+      setBubble("ホイッスル先生：<b>ハーフタイム！</b> Q" + state.quarter + " スタート。タイムアウトがリセットされたよ！");
+    } else {
+      setBubble("ホイッスル先生：<b>Q" + state.quarter + " スタート！</b>");
+    }
+    updateHUD();
+  }
+
   function resetGame() {
     recoverTape();
     state.home = 0; state.away = 0; state.drive = 0;
     state.down = 1; state.toGo = 10; state.los = 40; state.formation = null; state.phase = "formation";
     state.mode = "offense"; state.cpuStyle = null;
+    state.quarter = 1; state.clock = QUARTER_LENGTH;
+    state.timeoutsHome = 3; state.timeoutsAway = 3; state.twoMinWarned = false;
+    state.clockStopped = false; state.gameEnded = false;
     hintsShown = {};
     setActiveUnits("offense");
     updateHUD();
@@ -1147,9 +1247,20 @@
     }
     var yl = Math.round(state.los - GOAL_NEAR);
     var side = yl <= 50 ? "自陣" + yl : "敵陣" + (100 - yl);
-    document.getElementById("yardline").textContent = side + "ヤード ・ シリーズ " + Math.min(state.drive + 1, MAX_DRIVES) + "/" + MAX_DRIVES;
+    var qNum = Math.min(state.quarter, 4);   // 延長は Q4 と同じ表示（OT 表記も可）
+    var qLabel = state.quarter > 4 ? "OT" : ("Q" + qNum);
+    var clk = Math.max(0, Math.ceil(state.clock));
+    var qMin = Math.floor(clk / 60);
+    var qSec = clk % 60;
+    var clockStr = qMin + ":" + (qSec < 10 ? "0" : "") + qSec;
+    document.getElementById("yardline").textContent = side + "ヤード ・ " + qLabel + " " + clockStr;
     document.getElementById("homeS").textContent = state.home;
     document.getElementById("awayS").textContent = state.away;
+    var toBtn = document.getElementById("timeoutBtn");
+    if (toBtn) {
+      toBtn.textContent = "タイムアウト " + state.timeoutsHome;
+      toBtn.disabled = (state.timeoutsHome <= 0 || state.gameEnded);
+    }
     updateFirstDownLine();
   }
 
@@ -1487,6 +1598,12 @@
   document.getElementById("helpClose").onclick = function () {
     document.getElementById("help").style.display = "none";
   };
+
+  // タイムアウトボタン（攻撃/守備どちらの局面でも使用可）
+  (function () {
+    var toBtn = document.getElementById("timeoutBtn");
+    if (toBtn) toBtn.onclick = useTimeout;
+  })();
 
   // 選手情報パネルはタップで閉じる（レイキャスト本体は init 内で renderer 準備後に配線）
   (function () {

@@ -470,6 +470,17 @@
     return { team: "def", yards: 15, autoFirst: true, label: "アンネセサリーラフネス", type: "roughness" };
   }
 
+  /**
+   * 1プレーで消費するゲームクロックの秒数を返す（純粋関数）。
+   * @param {object} opts opts.kind {string} "run"|"short_complete"|"long_complete"|"incomplete"|"oob"|"score"|"timeout"|"turnover"
+   * @returns {number} 消費秒数
+   */
+  function playClockCost(opts) {
+    var kind = opts && opts.kind;
+    if (kind === "run" || kind === "short_complete" || kind === "long_complete") return 40;
+    return 6; // incomplete, oob, score, timeout, turnover, その他
+  }
+
   window.BoxelGame = {
     outcome: outcome,
     rollPrePenalty: rollPrePenalty,
@@ -492,6 +503,7 @@
     pursuitTarget: pursuitTarget,
     kickoffResult: kickoffResult,
     onsideRecovered: onsideRecovered,
-    puntReturn: puntReturn
+    puntReturn: puntReturn,
+    playClockCost: playClockCost
   };
 })();
