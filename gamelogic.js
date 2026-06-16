@@ -405,6 +405,42 @@
     };
   }
 
+  /**
+   * キックオフ結果を返す（純粋関数）。
+   * @param {object} opts opts.random {number} [0,1) - 省略時 Math.random()
+   * @returns {{ yards: number, kind: "touchback"|"return"|"bigReturn"|"fairCatch" }}
+   *   yards: 受球側が何ヤードラインからスタートするか（自陣基準、10〜50目安）
+   */
+  function kickoffResult(opts) {
+    var r = (opts && opts.random != null) ? opts.random : Math.random();
+    if (r < 0.55) return { yards: 25, kind: "touchback" };
+    if (r < 0.80) return { yards: 25, kind: "fairCatch" };
+    if (r < 0.93) return { yards: Math.round(20 + (r - 0.80) / 0.13 * 15), kind: "return" };
+    return { yards: Math.round(35 + (r - 0.93) / 0.07 * 10), kind: "bigReturn" };
+  }
+
+  /**
+   * オンサイドキックのリカバー成否（純粋関数）。
+   * @param {object} opts opts.random {number} [0,1) - 省略時 Math.random()
+   * @returns {boolean} true=自チームリカバー成功（約15%）
+   */
+  function onsideRecovered(opts) {
+    var r = (opts && opts.random != null) ? opts.random : Math.random();
+    return r < 0.15;
+  }
+
+  /**
+   * パントリターンのヤードを返す（純粋関数）。
+   * @param {object} opts opts.random {number} [0,1) - 省略時 Math.random()
+   * @returns {{ yards: number, kind: "fairCatch"|"return" }}
+   *   yards: リターンヤード（フェアキャッチなら0）
+   */
+  function puntReturn(opts) {
+    var r = (opts && opts.random != null) ? opts.random : Math.random();
+    if (r < 0.35) return { yards: 0, kind: "fairCatch" };
+    return { yards: Math.round(2 + (r - 0.35) / 0.65 * 12), kind: "return" };
+  }
+
   window.BoxelGame = {
     outcome: outcome,
     opponentDrive: opponentDrive,
@@ -422,6 +458,9 @@
     defenseDrive: defenseDrive,
     nearestDefenderIndex: nearestDefenderIndex,
     lineClashShift: lineClashShift,
-    pursuitTarget: pursuitTarget
+    pursuitTarget: pursuitTarget,
+    kickoffResult: kickoffResult,
+    onsideRecovered: onsideRecovered,
+    puntReturn: puntReturn
   };
 })();

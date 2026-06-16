@@ -168,6 +168,7 @@
   var pendingTape = null, tapeCooldown = 2;
   var anim = null;
   var defAnim = null;
+  var fgKick = null;
   var continueTimer = null;
   var view = "quarter";
   var camPos = new THREE.Vector3(), camTarget = new THREE.Vector3();
@@ -293,6 +294,24 @@
     for (var s = 0; s <= 120; s += 4) {
       g.add(box(60, 0.2, 4, (Math.floor(s / 4) % 2 ? 0x4f9d4f : 0x55a755), 0, -0.01, s + 2));
     }
+    // H型ゴールポスト（両エンドゾーン後方）
+    var postMat = new THREE.MeshLambertMaterial({ color: 0xffd700 });
+    var postBase1 = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 7, 8), postMat);
+    postBase1.position.set(0, 3.5, 8); g.add(postBase1);
+    var postCross1 = new THREE.Mesh(new THREE.BoxGeometry(12, 0.4, 0.4), postMat);
+    postCross1.position.set(0, 7.5, 8); g.add(postCross1);
+    var postL1 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 5, 8), postMat);
+    postL1.position.set(-6, 9.8, 8); g.add(postL1);
+    var postR1 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 5, 8), postMat);
+    postR1.position.set(6, 9.8, 8); g.add(postR1);
+    var postBase2 = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 7, 8), postMat);
+    postBase2.position.set(0, 3.5, 112); g.add(postBase2);
+    var postCross2 = new THREE.Mesh(new THREE.BoxGeometry(12, 0.4, 0.4), postMat);
+    postCross2.position.set(0, 7.5, 112); g.add(postCross2);
+    var postL2 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 5, 8), postMat);
+    postL2.position.set(-6, 9.8, 112); g.add(postL2);
+    var postR2 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 5, 8), postMat);
+    postR2.position.set(6, 9.8, 112); g.add(postR2);
     return g;
   }
 
@@ -538,7 +557,8 @@
       else setBubble("ホイッスル先生：<b>2ポイント失敗…</b> 6点のまま。ドンマイ。");
     }
     flashScore(); updateHUD();
-    waitContinue(function () { state.los = GOAL_FAR - 25; endPossession(0.1); });  // キックオフへ
+    // TD後: キックオフ種別選択（通常 or オンサイド）
+    waitContinue(chooseKickoffTypeUI);
   }
 
   // 攻守交代：守備フェーズへ移行する
@@ -627,7 +647,10 @@
       if (pat) state.away += 1;
       flashScore();
       setBubble("ホイッスル先生：相手の" + pn + "が決まって<b>タッチダウン…</b>" + (pat ? "（PATも成功で計7点）" : "（PATは失敗で6点）") + " 切り替えていこう！");
-      waitContinue(function () { concludeOppPossession(GOAL_NEAR + 25); });   // キックオフ: 自陣25付近から
+      // 相手TD後はhomeが受球するキックオフ
+      waitContinue(function () { startKickoff(true, function (losForHome) {
+        concludeOppPossession(losForHome);
+      }); });
       return;
     }
     state.oppLos = endZ;
@@ -775,6 +798,83 @@
     if (ep >= 1) { var cb = defAnim.onDone; defAnim = null; if (cb) cb(); }
   }
 
+  // キックオフ処理（非インタラクティブ・waitContinueで一拍おく）
+  // receivingIsHome: true=homeチームが受球, onDone(losForReceiver): 完了コールバック
+  function startKickoff(receivingIsHome, onDone) {
+    var kr = window.BoxelGame.kickoffResult({});
+    var kindMsg = (kr.kind === "touchback") ? "タッチバック！ 自陣25ヤードから。" :
+                  (kr.kind === "fairCatch") ? "フェアキャッチ！ 自陣25ヤードから。" :
+                  (kr.kind === "bigReturn") ? "ビッグリターン！ 自陣" + kr.yards + "ヤードから！" :
+                  "リターン。自陣" + kr.yards + "ヤードから。";
+    setBubble("ホイッスル先生：キックオフ！ " + kindMsg);
+    var losForReceiver = receivingIsHome
+      ? (GOAL_NEAR + kr.yards)
+      : (GOAL_FAR - kr.yards);
+    waitContinue(function () { onDone(losForReceiver); });
+  }
+
+  // FGのキック弧アニメーション（見た目のみ・結果は不変）。
+  // ボールが state.los から targetZ へ弧を描いて飛ぶ。success=true は左右中央を通過、
+  // false は左右どちらかへ外れる軌道。アニメ完了で onDone を呼ぶ。
+  // animate() ループ内の updateFGKick(dt) が進行を駆動する（ヘッドレスでは pump で駆動）。
+  function animateFGKick(targetZ, success, onDone) {
+    var startX = 0, startZ = state.los;
+    var endX = success ? 0 : (Math.random() < 0.5 ? 8 : -8);   // 失敗はアップライト外へ外れる
+    fgKick = { t: 0, dur: 1.0, startX: startX, startZ: startZ, endX: endX, endZ: targetZ,
+               success: success, onDone: onDone };
+    setMarkerColor(success ? 0x35c759 : 0xff3b30);
+    setBall(startX, startZ, 1.4);
+  }
+
+  function updateFGKick(dt) {
+    if (!fgKick) return;
+    fgKick.t += dt;
+    var p = Math.min(1, fgKick.t / fgKick.dur);
+    var x = lerp(fgKick.startX, fgKick.endX, p);
+    var z = lerp(fgKick.startZ, fgKick.endZ, p);
+    var y = 1.4 + Math.sin(p * Math.PI) * 9;   // 弧を描く（高く上がって落ちる）
+    setBall(x, z, y);
+    if (p >= 1) {
+      var cb = fgKick.onDone; fgKick = null; if (cb) cb();
+    }
+  }
+
+  // 自分の得点後のキックオフ種別選択（通常 / オンサイド）
+  function chooseKickoffTypeUI() {
+    state.phase = "formation";
+    setBubble("ホイッスル先生：<b>キックオフ</b>の種別を選ぼう！");
+    setCards([
+      { ico: "🏈", t: "通常キック", d: "深く蹴ってタッチバック狙い", fn: function () { chooseKickoffTypeUI_resolve(false); } },
+      { ico: "⚡", t: "オンサイド", d: "約15%で自チームリカバー。博打", fn: function () { chooseKickoffTypeUI_resolve(true); } }
+    ]);
+  }
+
+  function chooseKickoffTypeUI_resolve(onside) {
+    setCards([]);
+    state.phase = "animating";
+    if (onside) {
+      var recovered = window.BoxelGame.onsideRecovered({});
+      if (recovered) {
+        setBubble("ホイッスル先生：<b>オンサイドキック成功！</b> 自チームがリカバー！ 攻撃継続だ！");
+        waitContinue(function () {
+          state.los = GOAL_FAR - 45;
+          state.down = 1; state.toGo = 10; state.formation = null; state.phase = "formation";
+          updateHUD(); choosePersonnelUI();
+        });
+      } else {
+        setBubble("ホイッスル先生：<b>オンサイドキック失敗…</b> 相手がリカバー。相手有利な位置から。");
+        waitContinue(function () {
+          state.los = GOAL_FAR - 48;
+          endPossession(0);
+        });
+      }
+    } else {
+      startKickoff(false, function (losForAway) {
+        state.los = losForAway; endPossession(0.1);
+      });
+    }
+  }
+
   function gameOver() {
     var s = document.getElementById("start");
     var res = state.home > state.away ? "勝ち！" : state.home < state.away ? "負け…" : "引き分け";
@@ -791,7 +891,12 @@
     state.mode = "offense"; state.cpuStyle = null;
     hintsShown = {};
     setActiveUnits("offense");
-    updateHUD(); choosePersonnelUI();
+    updateHUD();
+    // オープニングキックオフ（homeが受球）。非インタラクティブでwaitContinueにより即choosePersonnelUIへ到達。
+    startKickoff(true, function (losForHome) {
+      state.los = Math.min(80, Math.max(15, losForHome));
+      updateHUD(); choosePersonnelUI();
+    });
   }
 
   function nextPlayReady() {
@@ -947,17 +1052,32 @@
       var prob = window.BoxelGame.fgProbability(state.los, statOf(kicker, "kick"));
       var ok = Math.random() < prob;
       setBubble(who + " が " + dist + "ヤードのフィールドゴールを狙う…！");
-      setTimeout(function () {
-        if (ok) { state.home += 3; setBubble("ホイッスル先生：<b>成功！ 3点</b>！ ナイスキック！"); flashScore(); state.los = GOAL_FAR - 25; endPossession(0.1); }
-        else { setBubble("ホイッスル先生：<b>失敗…</b> 惜しい！ 相手ボールへ。"); endPossession(0); }
-      }, 1100);
+      // ボールが弧を描いてゴールポスト(z=112)へ向かう短いアニメ（成功は通る/失敗は外れる）
+      animateFGKick(112, ok, function () {
+        if (ok) {
+          state.home += 3; flashScore();
+          setBubble("ホイッスル先生：<b>成功！ 3点</b>！ ナイスキック！");
+          // FGキック後は得点側がキックオフ（相手が受球）
+          waitContinue(function () { startKickoff(false, function (losForAway) {
+            state.los = losForAway; endPossession(0.1);
+          }); });
+        } else {
+          setBubble("ホイッスル先生：<b>失敗…</b> 惜しい！ 相手ボールへ。");
+          endPossession(0);
+        }
+      });
     } else {
+      // パント: パントリターン分を差し引く
       var dpunt = rand(30, 45) * (0.8 + 0.2 * kf);
       setBubble(who + " がパント！ ボールが高く飛ぶ…");
       setTimeout(function () {
-        setBubble("ホイッスル先生：相手を深い位置に押し込んだ！");
-        state.los = Math.min(GOAL_FAR - 5, Math.round(state.los + dpunt));   // パント距離だけ相手を自陣深くへ
-        endPossession(Math.min(0.45, dpunt / 100));
+        var pr = window.BoxelGame.puntReturn({});
+        var returnMsg = (pr.kind === "fairCatch") ? "フェアキャッチ！" : (pr.yards > 0 ? pr.yards + "ヤードリターン。" : "");
+        setBubble("ホイッスル先生：相手を深い位置に押し込んだ！ " + returnMsg);
+        var rawLos = Math.min(GOAL_FAR - 5, Math.round(state.los + dpunt));
+        // パントリターン分だけ手前（自分側）に戻す（受球側が前に出る）
+        state.los = Math.max(GOAL_NEAR + 5, rawLos - pr.yards);
+        endPossession(Math.min(0.45, (dpunt - pr.yards) / 100));
       }, 1000);
     }
   }
@@ -1294,6 +1414,7 @@
     var dt = Math.min(0.05, clock.getDelta());
     updateAnim(dt);
     updateDefenseAnim(dt);
+    updateFGKick(dt);
     ballMarker.position.set(ball.position.x, ball.position.y, ball.position.z);
     var t = clock.elapsedTime;
     ballMarker.children[0].rotation.z = t * 2;
