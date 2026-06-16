@@ -46,7 +46,9 @@
       if (Math.random() < 0.12 / pwr) y -= rand(2, 5);     // 弱いと止められる
       if (runHurt) y *= 0.55;
       y *= (1 + 0.5 * edge);                                // 読み合い: 相性◎で+50%/△で-50%
-      msg = "ランで前進！"; reason = "run";
+      // タックル・フォー・ロス（約8%）。高乱数側で判定し Math.random()=0 固定のテストでは発生しない。
+      if (Math.random() > 0.92) { y = -(1 + Math.round(rand(0, 4))); msg = "止められて後退…！"; reason = "loss"; }
+      else { msg = "ランで前進！"; reason = "run"; }
     } else if (play === "short") {
       var dropS = 0.16 / cat;                               // 捕球低いほど落球
       var failT = (passHurt ? 0.30 : 0.10) + dropS;
@@ -83,7 +85,8 @@
         msg = "ロングパス成功！大きく前進！"; reason = "catch";
       }
     }
-    y = Math.round(Math.max(0, y));
+    y = Math.round(y);
+    if (reason !== "loss") y = Math.max(0, y);            // ロス（負ヤード）以外は0未満にしない
     if (edge > 0)      msg += "（相性バッチリ！）";
     else if (edge < 0) msg += "（相手の守りにハマった…）";
     return { yards: y, complete: complete, turnover: turnover, msg: msg, reason: reason };

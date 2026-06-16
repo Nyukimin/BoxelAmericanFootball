@@ -456,7 +456,7 @@
 
   function finalize(o) {
     recoverTape();
-    var gained = Math.max(0, Math.round(ball.position.z - state.los));
+    var delta = Math.round(ball.position.z - state.los);   // 符号つき前進（ロスは負）
     if (o.turnover) {
       setBubble("ホイッスル先生：" + o.msg + " パスを相手に取られたので<b>攻守交代</b>。今度はキミが守備、取り返そう！");
       endPossession(0); return;
@@ -493,8 +493,15 @@
       }
     }
     state.los = Math.round(ball.position.z);
-    state.toGo -= gained;
-    var note = o.msg + "（" + gained + "ヤード）";
+    // セーフティ: 自陣エンドゾーン内/後方で止められた → 相手に2点、フリーキックで攻守交代
+    if (state.los <= GOAL_NEAR) {
+      state.away += 2; flashScore();
+      setBubble("ホイッスル先生：自陣エンドゾーンで止められた…<b>セーフティ！ 相手に2点</b>。フリーキックで攻守交代。");
+      state.los = GOAL_FAR - 40;   // フリーキック後、相手は自陣40付近から
+      endPossession(0); return;
+    }
+    state.toGo -= delta;           // ロス（負）は残りヤードが増える
+    var note = o.msg + "（" + delta + "ヤード）";
     if (state.toGo <= 0) {
       state.down = 1; state.toGo = 10;
       hint("first", "ホイッスル先生：" + note + " <b>ファーストダウン！</b> 10ヤード進めたから、また4回チャンスがもらえるよ！");
