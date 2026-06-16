@@ -51,6 +51,13 @@
   #help th { background: #f0f7e6; }
   #help b { color: #d9622b; }
   #help .close { display: block; margin: 20px auto 0; background: #ee8e3c; color: #fff; border: none; border-radius: 12px; padding: 11px 28px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  #playerInfo { position: absolute; top: 92px; left: 14px; z-index: 8; display: none; pointer-events: auto; background: rgba(36,48,24,.92); color: #fff; border-radius: 12px; padding: 10px 14px; max-width: 290px; cursor: pointer; box-shadow: 0 4px 0 rgba(0,0,0,.15); }
+  #playerInfo .pi-name { font-size: 16px; font-weight: 700; }
+  #playerInfo .pi-team { font-size: 11px; background: rgba(255,255,255,.22); border-radius: 6px; padding: 1px 6px; margin-left: 5px; vertical-align: middle; }
+  #playerInfo .pi-role { font-size: 13px; margin-top: 3px; line-height: 1.45; }
+  #playerInfo .pi-role b { color: #ffd166; }
+  #playerInfo .pi-stat { font-size: 12px; opacity: .85; margin-top: 5px; }
+  #playerInfo .pi-hint { font-size: 10px; opacity: .55; margin-top: 5px; }
 </style>
 </head>
 <body>
@@ -71,6 +78,7 @@
   <button data-v="player">選手視点</button>
 </div>
 <div class="hud" id="helpWrap"><button id="helpBtn">？ ヘルプ</button></div>
+<div id="playerInfo"></div>
 
 <div id="help">
   <div class="sheet">
@@ -141,7 +149,7 @@
   "use strict";
   var BC = window.BoxelChars;
 
-  var scene, camera, renderer;
+  var scene, camera, renderer, raycaster = null;
   var ball, ballMarker, trail, trailPts = [], manager = null;
   var offense = [], defense = [], carrier = null, qb = null, rb = null, wr = null;
   // 4ユニット: home攻撃 / home守備 / away攻撃 / away守備
@@ -863,6 +871,46 @@
     bs.forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-v") === v); });
   }
 
+  // フィールド上の選手をクリック → 名前・役割（ポジション）・能力値を表示する
+  function onPointerDown(e) {
+    if (!raycaster || !camera || !renderer.domElement.getBoundingClientRect) return;
+    var rect = renderer.domElement.getBoundingClientRect();
+    var ndc = {
+      x: ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      y: -((e.clientY - rect.top) / rect.height) * 2 + 1
+    };
+    raycaster.setFromCamera(ndc, camera);
+    var active = offense.concat(defense);                 // オンフィールドの22人のみ対象
+    var hits = raycaster.intersectObjects(active, true);
+    if (!hits.length) { hidePlayerInfo(); return; }
+    var obj = hits[0].object;
+    while (obj && obj.parent && obj.parent !== scene) obj = obj.parent;  // 親をたどって選手グループへ
+    if (obj && obj.userData && obj.userData.role) showPlayerInfo(obj);
+    else hidePlayerInfo();
+  }
+
+  function showPlayerInfo(p) {
+    var u = p.userData;
+    var roleLabel = (BC.ROLES[u.role] && BC.ROLES[u.role].label) ? BC.ROLES[u.role].label : "";
+    var team = (offense.indexOf(p) >= 0) ? "味方" : "相手";
+    var s = u.stats || {};
+    var el = document.getElementById("playerInfo");
+    el.innerHTML =
+      '<div class="pi-name">' + (u.name || "選手") + '<span class="pi-team">' + team + '</span></div>' +
+      '<div class="pi-role"><b>' + u.role + '</b> ― ' + roleLabel + '</div>' +
+      '<div class="pi-stat">スピード ' + (s.speed != null ? s.speed : 6) +
+        ' ・ パワー ' + (s.power != null ? s.power : 6) +
+        ' ・ 捕球 ' + (s.catch != null ? s.catch : 6) +
+        ' ・ キック ' + (s.kick != null ? s.kick : 6) + '</div>' +
+      '<div class="pi-hint">タップで閉じる／別の選手をタップで切替</div>';
+    el.style.display = "block";
+  }
+
+  function hidePlayerInfo() {
+    var el = document.getElementById("playerInfo");
+    if (el) el.style.display = "none";
+  }
+
   function updateCamera(dt) {
     var focus = (state.phase === "animating") ? ball.position : new THREE.Vector3(0, 0, state.los + 6);
     var off, look;
@@ -1072,6 +1120,12 @@
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
     renderer.setSize(window.innerWidth, window.innerHeight);
 
+    // 選手クリックで役割表示（ヘッドレスは THREE.Raycaster / addEventListener 非対応のためガード）
+    if (THREE.Raycaster) raycaster = new THREE.Raycaster();
+    if (renderer.domElement && renderer.domElement.addEventListener) {
+      renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    }
+
     scene.add(new THREE.AmbientLight(0xffffff, 0.75));
     var sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(20, 50, -10); scene.add(sun);
     scene.add(field());
@@ -1143,6 +1197,12 @@
   document.getElementById("helpClose").onclick = function () {
     document.getElementById("help").style.display = "none";
   };
+
+  // 選手情報パネルはタップで閉じる（レイキャスト本体は init 内で renderer 準備後に配線）
+  (function () {
+    var pinfo = document.getElementById("playerInfo");
+    if (pinfo) pinfo.onclick = hidePlayerInfo;
+  })();
 
   // テスト用: offense/defense/carrier/anim を window.__BoxelTest に公開
   window.__BoxelTest = {
