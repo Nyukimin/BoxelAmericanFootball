@@ -441,8 +441,39 @@
     return { yards: Math.round(2 + (r - 0.35) / 0.65 * 12), kind: "return" };
   }
 
+  /**
+   * スナップ前の反則を返す（純粋関数・高乱数側で発火）。約6%。
+   * @param {object} opts opts.random/opts.random2 [0,1) 省略時 Math.random()
+   * @returns {null | { team:"off"|"def", yards:number, label:string, type:string }}
+   */
+  function rollPrePenalty(opts) {
+    var r = (opts && opts.random != null) ? opts.random : Math.random();
+    if (r < 0.94) return null;
+    var r2 = (opts && opts.random2 != null) ? opts.random2 : Math.random();
+    if (r2 < 0.5) return { team: "off", yards: 5, label: "フォルススタート", type: "falseStart" };
+    if (r2 < 0.8) return { team: "def", yards: 5, label: "オフサイド", type: "offside" };
+    return { team: "off", yards: 5, label: "ディレイオブゲーム", type: "delay" };
+  }
+
+  /**
+   * プレー中の反則を返す（純粋関数・高乱数側で発火）。約10%。
+   * @returns {null | { team:"off"|"def", yards:number, autoFirst:boolean, label:string, type:string }}
+   */
+  function rollPlayPenalty(opts) {
+    var r = (opts && opts.random != null) ? opts.random : Math.random();
+    if (r < 0.90) return null;
+    var r2 = (opts && opts.random2 != null) ? opts.random2 : Math.random();
+    if (r2 < 0.30) return { team: "off", yards: 10, autoFirst: false, label: "ホールディング", type: "offHold" };
+    if (r2 < 0.50) return { team: "def", yards: 5,  autoFirst: true,  label: "ホールディング", type: "defHold" };
+    if (r2 < 0.70) return { team: "def", yards: 15, autoFirst: true,  label: "パスインターフェア", type: "defPI" };
+    if (r2 < 0.85) return { team: "def", yards: 15, autoFirst: true,  label: "フェイスマスク", type: "facemask" };
+    return { team: "def", yards: 15, autoFirst: true, label: "アンネセサリーラフネス", type: "roughness" };
+  }
+
   window.BoxelGame = {
     outcome: outcome,
+    rollPrePenalty: rollPrePenalty,
+    rollPlayPenalty: rollPlayPenalty,
     opponentDrive: opponentDrive,
     fgProbability: fgProbability,
     fgAngleWindow: fgAngleWindow,

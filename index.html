@@ -420,8 +420,27 @@
     return window.BoxelGame.outcome(formation, play, ctx);
   }
 
+  // スナップ前の反則を適用してダウンをやり直す（プレーは行わない）。
+  function applyPrePenalty(pre) {
+    setCards([]);
+    if (pre.team === "off") {
+      state.los = Math.max(GOAL_NEAR + 1, state.los - pre.yards);
+      state.toGo += pre.yards;
+      setBubble("ホイッスル先生：反則【攻撃の<b>" + pre.label + "</b>】 " + pre.yards + "ヤード罰退、ダウンやり直し。");
+    } else {
+      state.los = Math.min(GOAL_FAR - 1, state.los + pre.yards);
+      state.toGo -= pre.yards;
+      if (state.toGo <= 0) { state.down = 1; state.toGo = 10; setBubble("ホイッスル先生：反則【守備の<b>" + pre.label + "</b>】 " + pre.yards + "ヤード前進で<b>ファーストダウン</b>！"); }
+      else setBubble("ホイッスル先生：反則【守備の<b>" + pre.label + "</b>】 " + pre.yards + "ヤード前進、ダウンやり直し。");
+    }
+    state.phase = "animating"; updateHUD();
+    nextPlayReady();
+  }
+
   function startPlay(play) {
     state.play = play;
+    var pre = window.BoxelGame.rollPrePenalty({});
+    if (pre) { applyPrePenalty(pre); return; }   // スナップ前反則ならプレーせずやり直し
     var o = outcome(state.formation, play);
     var startZ = state.los;
     var endZ = Math.min(state.los + o.yards, GOAL_FAR);
@@ -509,6 +528,30 @@
           endPossession(0); return;
         }
         o.msg = "あぶないファンブル！ 自分で確保。 " + o.msg;   // 味方リカバー → 続行
+      }
+    }
+    // プレー中の反則（受諾/辞退を自動判定）。テスト安定のため高乱数側で発火。
+    var prevLos = state.los, playEndLos = Math.round(ball.position.z);
+    var pen = window.BoxelGame.rollPlayPenalty({});
+    if (pen) {
+      if (pen.team === "def") {                 // 守備の反則＝攻撃有利。良ければ受諾
+        var penLos = Math.min(GOAL_FAR - 1, prevLos + pen.yards);
+        if (pen.autoFirst || penLos > playEndLos) {
+          state.los = penLos;
+          if (pen.autoFirst) { state.down = 1; state.toGo = 10; }
+          else { state.toGo -= (penLos - prevLos); if (state.toGo <= 0) { state.down = 1; state.toGo = 10; } }
+          setBubble("ホイッスル先生：反則【守備の<b>" + pen.label + "</b>】受諾！ " + (pen.autoFirst ? "<b>自動ファーストダウン</b>＋" : "") + pen.yards + "ヤード前進。");
+          updateHUD(); nextPlayReady(); return;
+        }
+        // 辞退 → プレー結果を採用（下へ続行）
+      } else {                                  // 攻撃の反則＝守備有利。前進プレーなら帳消しに受諾
+        if (playEndLos - prevLos >= 0) {
+          state.los = Math.max(GOAL_NEAR + 1, prevLos - pen.yards);
+          state.toGo += pen.yards;
+          setBubble("ホイッスル先生：反則【攻撃の<b>" + pen.label + "</b>】 守備が受諾。" + pen.yards + "ヤード罰退、ダウンやり直し。");
+          updateHUD(); nextPlayReady(); return;
+        }
+        // 辞退 → プレー結果を採用
       }
     }
     state.los = Math.round(ball.position.z);
