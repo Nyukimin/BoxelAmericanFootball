@@ -461,11 +461,36 @@
       setBubble("ホイッスル先生：" + o.msg + " パスを相手に取られたので<b>攻守交代</b>。今度はキミが守備、取り返そう！");
       endPossession(0); return;
     }
+    // 不成功パス（落球/届かず）は前進なし・ライン不変。ダウンだけ消費する。
+    if (!o.complete) {
+      state.down += 1;
+      if (state.down > 4) {
+        setBubble("ホイッスル先生：" + o.msg + " 前進できず、<b>4回で10ヤードに届かず攻守交代</b>。今度はキミが守備だよ。");
+        endPossession(0); return;
+      }
+      var hm = "ホイッスル先生：" + o.msg + " 前進なし、ラインはそのまま。残り" + state.toGo + "ヤード。";
+      if (state.down === 4) hint("fourth", hm + " <b>4回目</b>！ 行く？ キック（FG/パント）も選べるよ。");
+      else setBubble(hm + " " + ordinal(state.down) + "ダウン、いってみよう！");
+      nextPlayReady(); return;
+    }
     if (ball.position.z >= GOAL_FAR - 0.5) {
-      state.home += 7;
-      hint("td", "ホイッスル先生：<b>タッチダウン！</b> ゴールまで運べて6点＋キックで7点だよ！");
+      state.home += 6;             // タッチダウンは6点。追加点は PAT / 2ポイントで選ぶ
       flashScore();
-      endPossession(0.1); return;
+      hint("td", "ホイッスル先生：<b>タッチダウン！ 6点</b>！ 追加点をねらおう。");
+      afterTouchdown(); return;
+    }
+    // ファンブル判定（ボールを保持して走った/捕ったプレーのみ）。
+    // テストは Math.random()=0 固定のため、高乱数側で発生させ誤発火を防ぐ（確率は同じ）。
+    if (o.complete && carrier) {
+      var fprob = window.BoxelGame.fumbleProbability(statOf(carrier, "power"));
+      if (Math.random() > 1 - fprob) {
+        if (Math.random() > 0.5) {   // 相手がリカバー → 攻守交代
+          state.los = Math.round(ball.position.z);
+          setBubble("ホイッスル先生：<b>ファンブル！</b> こぼれたボールを相手に確保された…！ 攻守交代。");
+          endPossession(0); return;
+        }
+        o.msg = "あぶないファンブル！ 自分で確保。 " + o.msg;   // 味方リカバー → 続行
+      }
     }
     state.los = Math.round(ball.position.z);
     state.toGo -= gained;
@@ -484,6 +509,29 @@
       else setBubble(h + " " + ordinal(state.down) + "ダウン、いってみよう！");
     }
     nextPlayReady();
+  }
+
+  // タッチダウン後の追加点（トライ・フォー・ポイント）。PAT=キックで1点 / 2ポイント=プレーで2点。
+  function afterTouchdown() {
+    state.phase = "formation";
+    setBubble("ホイッスル先生：<b>追加点</b>をどうする？（PATは確実に1点、2ポイントは成功で2点・リスクあり）");
+    setCards([
+      { ico: "🥅", t: "PAT（キック）", d: "ほぼ確実に1点。計7点を狙う", fn: function () { resolveTry("pat"); } },
+      { ico: "💥", t: "2ポイント", d: "プレーで2点。成功すれば計8点", fn: function () { resolveTry("two"); } }
+    ]);
+  }
+  function resolveTry(kind) {
+    setCards([]);
+    state.phase = "animating";
+    if (kind === "pat") {
+      if (Math.random() < 0.94) { state.home += 1; setBubble("ホイッスル先生：<b>PAT成功！</b> 計7点。"); }
+      else setBubble("ホイッスル先生：<b>PAT失敗…</b> 6点のまま。切り替えよう。");
+    } else {
+      if (Math.random() < 0.47) { state.home += 2; setBubble("ホイッスル先生：<b>2ポイント成功！</b> 計8点！ ナイス勝負。"); }
+      else setBubble("ホイッスル先生：<b>2ポイント失敗…</b> 6点のまま。ドンマイ。");
+    }
+    flashScore(); updateHUD();
+    waitContinue(function () { state.los = GOAL_FAR - 25; endPossession(0.1); });  // キックオフへ
   }
 
   // 攻守交代：守備フェーズへ移行する
@@ -567,9 +615,12 @@
       return;
     }
     if (td) {
-      state.away += 7; flashScore();
-      setBubble("ホイッスル先生：相手の" + pn + "が決まって<b>タッチダウン…</b> 切り替えていこう！");
-      waitContinue(function () { concludeOppPossession(40); });
+      state.away += 6;                                  // 相手TDは6点
+      var pat = Math.random() < 0.94;                   // CPUは基本PAT
+      if (pat) state.away += 1;
+      flashScore();
+      setBubble("ホイッスル先生：相手の" + pn + "が決まって<b>タッチダウン…</b>" + (pat ? "（PATも成功で計7点）" : "（PATは失敗で6点）") + " 切り替えていこう！");
+      waitContinue(function () { concludeOppPossession(GOAL_NEAR + 25); });   // キックオフ: 自陣25付近から
       return;
     }
     state.oppLos = endZ;
@@ -649,9 +700,25 @@
       defAnim.t += dt;
       var p = Math.min(1, defAnim.t / defAnim.dur);
       c.position.z = lerp(defAnim.startZ, defAnim.endZ, p);
+      c.position.x = Math.sin(p * 6) * 0.8 * (1 - p);                  // 緩急をつけて走る（直線にしない）
       c.position.y = Math.abs(Math.sin(p * 16)) * 0.22;
+      // 相手の攻撃側もロール別に: OL/TE=味方守備へブロック / WR・RB・QB=前方へルート
       defAnim.blockers.forEach(function (b) {
-        b.position.z = lerp(defAnim.startZ + 1, defAnim.endZ + 2, p);   // ブロッカーも前進
+        var brl = b.userData.role;
+        if (brl === "OL" || brl === "TE") {
+          var df = nearestIn(offense, b.position.x, b.position.z, null);   // 最寄りの味方守備に当たる
+          if (df) {
+            b.position.x += (df.position.x - b.position.x) * Math.min(1, dt * 1.5);
+            b.position.z += (df.position.z - b.position.z) * Math.min(1, dt * 1.5);
+            b.rotation.y = Math.atan2(df.position.x - b.position.x, df.position.z - b.position.z);
+          }
+        } else {
+          // WR/RB/QB: 前方(-z)へ進みつつ外へ開く（ルート/リード風）
+          var dir = (b.position.x >= 0) ? 1 : -1;
+          b.position.z = lerp(defAnim.startZ + 1, defAnim.endZ - 1, p);
+          b.position.x += dir * dt * 1.6;
+          b.rotation.y = Math.PI;
+        }
       });
       // 味方守備をロール別に動かす（全員ボールへ殺到しない・敵守備と同じ思想）
       var tIdx = 0, tBest = Infinity;                                    // 最寄りの味方=タックラー
@@ -874,7 +941,7 @@
       var ok = Math.random() < prob;
       setBubble(who + " が " + dist + "ヤードのフィールドゴールを狙う…！");
       setTimeout(function () {
-        if (ok) { state.home += 3; setBubble("ホイッスル先生：<b>成功！ 3点</b>！ ナイスキック！"); flashScore(); endPossession(0.1); }
+        if (ok) { state.home += 3; setBubble("ホイッスル先生：<b>成功！ 3点</b>！ ナイスキック！"); flashScore(); state.los = GOAL_FAR - 25; endPossession(0.1); }
         else { setBubble("ホイッスル先生：<b>失敗…</b> 惜しい！ 相手ボールへ。"); endPossession(0); }
       }, 1100);
     } else {
@@ -882,6 +949,7 @@
       setBubble(who + " がパント！ ボールが高く飛ぶ…");
       setTimeout(function () {
         setBubble("ホイッスル先生：相手を深い位置に押し込んだ！");
+        state.los = Math.min(GOAL_FAR - 5, Math.round(state.los + dpunt));   // パント距離だけ相手を自陣深くへ
         endPossession(Math.min(0.45, dpunt / 100));
       }, 1000);
     }
@@ -899,11 +967,13 @@
         "守備中 ・ 相手 " + ordinal(state.oppDown) + " & " + ot + "（あと" + (5 - state.oppDown) + "回止めれば取り返す）";
     } else {
       var toGo = Math.max(0, state.toGo);
+      var toGoal = Math.round(GOAL_FAR - state.los);     // ゴールまでのヤード
+      var goalToGo = (toGo >= toGoal);                   // 到達ラインがゴール = ゴール・トゥ・ゴー
       var remain = 5 - state.down;   // 今を含めた残り挑戦回数（4ダウン制）
-      var plain = state.down >= 4
-        ? "ラストチャンス！あと" + toGo + "ヤード"
-        : "のこり" + remain + "回であと" + toGo + "ヤード";
-      document.getElementById("downdist").textContent = ordinal(state.down) + " & " + toGo + " ・ " + plain;
+      var distLabel = goalToGo ? "Goal" : toGo;
+      var aim = goalToGo ? ("ゴールまであと" + toGoal + "ヤード") : ("あと" + toGo + "ヤード");
+      var plain = state.down >= 4 ? ("ラストチャンス！" + aim) : ("のこり" + remain + "回で" + aim);
+      document.getElementById("downdist").textContent = ordinal(state.down) + " & " + distLabel + " ・ " + plain;
     }
     var yl = Math.round(state.los - GOAL_NEAR);
     var side = yl <= 50 ? "自陣" + yl : "敵陣" + (100 - yl);
