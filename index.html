@@ -36,6 +36,7 @@
   #start .ball { font-size: 64px; }
   .hint { font-size: 12px; opacity: .75; }
   #tapNext { display: none; margin-top: 8px; text-align: center; font-size: 14px; font-weight: 700; color: #2f4d22; background: #ffe9b8; border: 2px solid #ffd166; border-radius: 10px; padding: 9px; cursor: pointer; animation: tapPulse 1s ease-in-out infinite; }
+  #personnelBtn { display: none; margin-top: 8px; text-align: center; font-size: 13px; font-weight: 700; color: #234; background: #dfeefc; border: 2px solid #8fbce6; border-radius: 10px; padding: 8px; cursor: pointer; }
   @keyframes tapPulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
   #helpWrap { top: 52px; right: 14px; pointer-events: auto; }
   #helpBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
@@ -142,6 +143,7 @@
 <div class="hud" id="panel">
   <div class="bubble" id="bubble">ホイッスル先生：まずは隊形を選んでね！</div>
   <div id="tapNext">▶ タップで次へ</div>
+  <div id="personnelBtn">↺ 編成を変える</div>
   <div class="cards" id="cards"></div>
 </div>
 
@@ -156,8 +158,9 @@
   var scene, camera, renderer, raycaster = null;
   var ball, ballMarker, trail, trailPts = [], manager = null, firstDownLine = null;
   var offense = [], defense = [], carrier = null, qb = null, rb = null, wr = null;
-  // 4ユニット: home攻撃 / home守備 / away攻撃 / away守備
-  var homeOff = [], homeDef = [], awayOff = [], awayDef = [];
+  // 6ユニット: home攻撃 / home守備 / away攻撃 / away守備 / home特殊 / away特殊
+  var homeOff = [], homeDef = [], awayOff = [], awayDef = [], homeSpec = [], awaySpec = [];
+  var prevUnitMode = "offense";   // special から戻る先（"offense"/"defense"）を覚えておく
   var clock;
 
   var GOAL_NEAR = 10, GOAL_FAR = 110, MAX_DRIVES = 6;
@@ -170,13 +173,17 @@
     oppLos: 40, oppDown: 1, oppToGo: 10, defFront: "balanced",
     personnel: "balanced",
     quarter: 1, clock: 90, timeoutsHome: 3, timeoutsAway: 3, twoMinWarned: false,
-    clockStopped: false, gameEnded: false
+    clockStopped: false, gameEnded: false,
+    hashX: 0,                  // ボールの横位置（ハッシュ）。-6=左 / 0=中央 / +6=右
+    fwdPassUsed: false         // この1ダウンで前方パスを既に使ったか（イリーガル判定用）
   };
+  var FIELD_HALF_W = 27;       // フィールド片側幅（クランプ用）
   var hintsShown = {};
   var pendingTape = null, tapeCooldown = 2;
   var anim = null;
   var defAnim = null;
   var fgKick = null;
+  var fgMeter = null;
   var continueTimer = null;
   var view = "quarter";
   var camPos = new THREE.Vector3(), camTarget = new THREE.Vector3();
@@ -188,24 +195,35 @@
   // 攻守モードに応じてオンフィールドユニットを切り替え、非表示ユニットを隠す
   // mode="offense": home攻撃/away守備がオンフィールド、home守備/away攻撃を非表示
   // mode="defense": home守備/away攻撃がオンフィールド、home攻撃/away守備を非表示
+  function hideAllUnits() {
+    homeOff.forEach(function (p) { p.visible = false; });
+    awayDef.forEach(function (p) { p.visible = false; });
+    homeDef.forEach(function (p) { p.visible = false; });
+    awayOff.forEach(function (p) { p.visible = false; });
+    homeSpec.forEach(function (p) { p.visible = false; });
+    awaySpec.forEach(function (p) { p.visible = false; });
+  }
   function setActiveUnits(mode) {
+    hideAllUnits();
     if (mode === "offense") {
-      offense = homeOff;
-      defense = awayDef;
+      offense = homeOff; defense = awayDef;
       homeOff.forEach(function (p) { p.visible = true; });
       awayDef.forEach(function (p) { p.visible = true; });
-      homeDef.forEach(function (p) { p.visible = false; });
-      awayOff.forEach(function (p) { p.visible = false; });
-    } else {
-      // mode === "defense"
-      offense = homeDef;
-      defense = awayOff;
+      prevUnitMode = "offense";
+    } else if (mode === "defense") {
+      offense = homeDef; defense = awayOff;
       homeDef.forEach(function (p) { p.visible = true; });
       awayOff.forEach(function (p) { p.visible = true; });
-      homeOff.forEach(function (p) { p.visible = false; });
-      awayDef.forEach(function (p) { p.visible = false; });
+      prevUnitMode = "defense";
+    } else {
+      // mode === "special": キック局面の専用ユニット（home特殊=自軍 / away特殊=相手）
+      offense = homeSpec; defense = awaySpec;
+      homeSpec.forEach(function (p) { p.visible = true; });
+      awaySpec.forEach(function (p) { p.visible = true; });
     }
   }
+  // キック局面を抜けるときに元の攻撃/守備ユニットへ戻す
+  function restoreUnits() { setActiveUnits(prevUnitMode); }
   // フレックス5体（QB・OL 以外）の role を編成タイプで再割り当て（stats/animal/name は不変）
   function applyPersonnel(type) {
     state.personnel = type;
@@ -401,7 +419,19 @@
       else { defense[d].position.set(0, 0, los + 4); }
     }
 
+    applyHashShift(offense);
+    applyHashShift(defense);
     setBall(qb.position.x, qb.position.z);
+  }
+
+  // ハッシュ（state.hashX）に応じて全選手の横位置をずらし、フィールド幅内にクランプする。
+  // ハッシュによりボールの左右位置が再現される（中央=0 / 左=-6 / 右=+6 が基本）。
+  function applyHashShift(list) {
+    if (!state.hashX) return;
+    for (var i = 0; i < list.length; i++) {
+      var nx = list[i].position.x + state.hashX;
+      list[i].position.x = Math.max(-FIELD_HALF_W, Math.min(FIELD_HALF_W, nx));
+    }
   }
 
   function setBall(x, z, y) { ball.position.set(x, y == null ? 1.4 : y, z); }
@@ -447,6 +477,8 @@
 
   function startPlay(play) {
     state.play = play;
+    // 前方パスは1ダウン1回。新しいダウンの最初に既使用フラグをリセットし、パスで使用を記録。
+    state.fwdPassUsed = (play === "short" || play === "long");
     var pre = window.BoxelGame.rollPrePenalty({});
     if (pre) { applyPrePenalty(pre); return; }   // スナップ前反則ならプレーせずやり直し
     var o = outcome(state.formation, play);
@@ -500,6 +532,63 @@
     setBubble(state.formation.toUpperCase() + " で <b>" + playName(play) + "</b>！ スナップ！");
   }
 
+  // プレー終了時のキャリア横位置から次プレーのハッシュ（state.hashX）を更新する。
+  // 右(>4)=+6 / 左(<-4)=-6 / 中央=0。アウトオブバウンズ時はサイドライン寄り(±10)。
+  function updateHashFromCarrier(oob) {
+    var cx = (carrier && carrier.position) ? carrier.position.x : 0;
+    if (oob) { state.hashX = cx >= 0 ? 10 : -10; return; }
+    if (cx > 4) state.hashX = 6;
+    else if (cx < -4) state.hashX = -6;
+    else state.hashX = 0;
+  }
+
+  // パスプレー固有の反則を適用してダウンを進める（前進なし・罰退つき）。
+  // grounding/illegalForward は loss-of-down（ダウン消費）、ineligible はダウンやり直し。
+  function applyPassFoul(pf) {
+    state.los = Math.max(GOAL_NEAR + 1, state.los - pf.yards);
+    state.toGo += pf.yards;
+    var head = "ホイッスル先生：反則【攻撃の<b>" + pf.label + "</b>】 " + pf.yards + "ヤード罰退";
+    if (pf.lossOfDown) {
+      state.down += 1;
+      if (state.down > 4) {
+        setBubble(head + "・ロスオブダウン。<b>4回で届かず攻守交代</b>。");
+        updateHUD(); endPossession(0); return;
+      }
+      setBubble(head + "・<b>ロスオブダウン</b>。" + ordinal(state.down) + "ダウン。");
+    } else {
+      setBubble(head + "、<b>ダウンやり直し</b>。残り" + state.toGo + "ヤード。");
+    }
+    updateHUD(); nextPlayReady();
+  }
+
+  // ターンオーバー（INT/ファンブル喪失）を解決する。奪った側がリターンし、
+  // リターンTDなら相手に6点（+自動PAT 0.94）を与えてキックオフへ。それ以外は攻守交代。
+  // reason: 状況説明の文（HTML可）。
+  function resolveTurnover(reason) {
+    var tr = window.BoxelGame.turnoverReturn({});
+    if (tr.td) {
+      state.away += 6;
+      var pat = Math.random() < 0.94;
+      if (pat) state.away += 1;
+      flashScore(); updateHUD();
+      setBubble("ホイッスル先生：" + reason + "、そのまま走られて<b>リターンタッチダウン…！</b>" +
+                (pat ? "（PATも成功で計7点）" : "（PATは失敗で6点）") + " 切り替えよう。");
+      // 相手TD後は home が受球するキックオフ
+      waitContinue(function () { startKickoff(true, function (losForHome) {
+        state.los = Math.min(80, Math.max(15, losForHome));
+        state.mode = "offense"; state.down = 1; state.toGo = 10; state.hashX = 0;
+        state.formation = null; state.phase = "formation";
+        setActiveUnits("offense"); placeFormation("single"); updateHUD(); choosePersonnelUI();
+      }); });
+      return;
+    }
+    // リターン分だけ相手の開始位置を前進させる（自陣 -z 方向＝相手が前進）。
+    var retMsg = tr.yards > 0 ? (" " + tr.yards + "ヤードのリターン。") : "";
+    state.los = Math.max(GOAL_NEAR + 1, Math.round(ball.position.z) - tr.yards);
+    setBubble("ホイッスル先生：" + reason + "ので<b>攻守交代</b>。" + retMsg + " 今度はキミが守備、取り返そう！");
+    endPossession(0);
+  }
+
   function finalize(o) {
     recoverTape();
     // アウトオブバウンズ判定（成功プレーのみ・低確率）。クロック停止になり消費小。
@@ -508,6 +597,7 @@
     if (o.complete && (o.reason === "run" || o.reason === "catch") && Math.random() > 0.92) {
       oob = true;
     }
+    updateHashFromCarrier(oob);
     // クロック消費: 成功（インバウンズ）は40秒で継続、それ以外（不成功/ターンオーバー/
     // アウトオブバウンズ/得点/タイムアウト）はクロック停止扱いで消費小。
     var costKind;
@@ -524,8 +614,15 @@
     if (state.gameEnded) { return; }
     var delta = Math.round(ball.position.z - state.los);   // 符号つき前進（ロスは負）
     if (o.turnover) {
-      setBubble("ホイッスル先生：" + o.msg + " パスを相手に取られたので<b>攻守交代</b>。今度はキミが守備、取り返そう！");
-      endPossession(0); return;
+      // インターセプト＝相手ボール。奪った側がリターン（リターンTDなら相手に得点）。
+      resolveTurnover(o.msg + " パスを相手に取られた");
+      return;
+    }
+    // パスプレー固有の反則（グラウンディング/イリジブル/イリーガルフォワード）。
+    // ターンオーバー以外のパスのみ。高乱数側で発火するためテストには影響しない。
+    if (state.play === "short" || state.play === "long") {
+      var pf = window.BoxelGame.rollPassFoul({ play: state.play, complete: o.complete });
+      if (pf) { applyPassFoul(pf); return; }
     }
     // 不成功パス（落球/届かず）は前進なし・ライン不変。ダウンだけ消費する。
     if (!o.complete) {
@@ -550,10 +647,10 @@
     if (o.complete && carrier) {
       var fprob = window.BoxelGame.fumbleProbability(statOf(carrier, "power"));
       if (Math.random() > 1 - fprob) {
-        if (Math.random() > 0.5) {   // 相手がリカバー → 攻守交代
+        if (Math.random() > 0.5) {   // 相手がリカバー → 奪った側がリターン
           state.los = Math.round(ball.position.z);
-          setBubble("ホイッスル先生：<b>ファンブル！</b> こぼれたボールを相手に確保された…！ 攻守交代。");
-          endPossession(0); return;
+          resolveTurnover("<b>ファンブル！</b> こぼれたボールを相手に確保された…");
+          return;
         }
         o.msg = "あぶないファンブル！ 自分で確保。 " + o.msg;   // 味方リカバー → 続行
       }
@@ -592,16 +689,31 @@
     }
     state.toGo -= delta;           // ロス（負）は残りヤードが増える
     var note = o.msg + "（" + delta + "ヤード）";
+    // 計測（チェーン）演出: ファーストダウンラインとの差が1ヤード以内の僅差なら
+    // 「計測中…」を一拍はさんでから判定する（常時ではなく僅差時のみ）。
+    if (Math.abs(state.toGo) <= 1) {
+      setBubble("ホイッスル先生：きわどい…！ <b>計測中…</b> チェーンを持ってこよう。");
+      waitContinue(function () { concludeAdvance(note, true); });
+      return;
+    }
+    concludeAdvance(note, false);
+  }
+
+  // 前進確定後のダウン処理（ファーストダウン/ダウン更新/ターンオーバー・オン・ダウンズ）。
+  // measured=true は計測演出を経た僅差ケース（届いた/わずかに届かずの言い回しにする）。
+  function concludeAdvance(note, measured) {
     if (state.toGo <= 0) {
       state.down = 1; state.toGo = 10;
-      hint("first", "ホイッスル先生：" + note + " <b>ファーストダウン！</b> 10ヤード進めたから、また4回チャンスがもらえるよ！");
+      var reach = measured ? "（計測の結果、<b>届いた！</b>）" : "";
+      hint("first", "ホイッスル先生：" + note + " " + reach + "<b>ファーストダウン！</b> 10ヤード進めたから、また4回チャンスがもらえるよ！");
     } else {
       state.down += 1;
+      var nudge = measured ? "（計測の結果、<b>わずかに届かず</b>…）" : "";
       if (state.down > 4) {
-        setBubble("ホイッスル先生：" + note + " <b>4回のチャンスで10ヤードに届かず、攻守交代</b>。今度はキミが守備だよ。");
+        setBubble("ホイッスル先生：" + note + " " + nudge + "<b>4回のチャンスで10ヤードに届かず、攻守交代</b>。今度はキミが守備だよ。");
         endPossession(0); return;
       }
-      var h = "ホイッスル先生：" + note + " 残り" + state.toGo + "ヤード。";
+      var h = "ホイッスル先生：" + note + " " + nudge + "残り" + state.toGo + "ヤード。";
       if (state.down === 4) hint("fourth", h + " <b>4回目</b>！ 行く？ キック（FG/パント）も選べるよ。");
       else setBubble(h + " " + ordinal(state.down) + "ダウン、いってみよう！");
     }
@@ -636,6 +748,7 @@
   // 直前に出た「なぜ攻守交代したか」の説明を読む時間をとってから守備選択へ進む（教育目的）
   function endPossession(pinBonus) {
     state.mode = "defense";
+    state.hashX = 0;            // 攻守交代でハッシュを中央へリセット
     state.defLos = state.los;
     state.defPin = pinBonus || 0;
     state.cpuStyle = window.BoxelGame.pickCpuStyle();
@@ -758,6 +871,7 @@
     if (state.quarter > 4 || (state.quarter >= 4 && state.clock <= 0)) { gameOver(); return; }
     recoverTape();
     state.mode = "offense";
+    state.hashX = 0;                  // 新シリーズはハッシュを中央へ
     state.down = 1; state.toGo = 10;
     state.los = Math.min(80, Math.max(15, yourLos));
     state.formation = null; state.phase = "formation";
@@ -781,7 +895,28 @@
       offense[o].position.set(ox, 0, dline);
       offense[o].rotation.set(0, 0, 0);         // 相手(+z)方向を向く
     }
-    setBall(0, oppLos - 0.3, 1.3);
+    applyHashShift(offense);
+    applyHashShift(defense);
+    setBall(state.hashX || 0, oppLos - 0.3, 1.3);
+  }
+
+  // キック局面でスペシャルチーム専用ユニットをフィールドに整列させる（見せるだけ）。
+  // setActiveUnits("special") 済みであること。kickZ=ボールのある縦位置（LOS相当）。
+  // kickerIsHome=true なら home特殊がキック側（手前）に並ぶ。
+  function placeSpecialFormation(kickZ, kickerIsHome) {
+    var kicking = offense;   // special モードでは offense=homeSpec / defense=awaySpec
+    var receiving = defense;
+    var kickDir = kickerIsHome ? 1 : -1;            // home は +z 方向へ蹴る
+    for (var i = 0; i < kicking.length; i++) {
+      var kx = (kicking.length > 1) ? (i * (40 / (kicking.length - 1)) - 20) : 0;
+      kicking[i].position.set(kx, 0, kickZ - kickDir * 1.5);
+      kicking[i].rotation.set(0, kickerIsHome ? 0 : Math.PI, 0);
+    }
+    for (var j = 0; j < receiving.length; j++) {
+      var rx = (receiving.length > 1) ? (j * (40 / (receiving.length - 1)) - 20) : 0;
+      receiving[j].position.set(rx, 0, kickZ + kickDir * 14);
+      receiving[j].rotation.set(0, kickerIsHome ? Math.PI : 0, 0);
+    }
   }
 
   // 相手の1プレーを可視化する（startZ→endZ へ前進、味方が追って止める/得点）。
@@ -884,6 +1019,9 @@
   // キックオフ処理（非インタラクティブ・waitContinueで一拍おく）
   // receivingIsHome: true=homeチームが受球, onDone(losForReceiver): 完了コールバック
   function startKickoff(receivingIsHome, onDone) {
+    // キックオフはスペシャルチーム専用ユニットで行う（蹴る側＝受球しない側）。
+    setActiveUnits("special");
+    placeSpecialFormation(GOAL_NEAR + 35, !receivingIsHome);
     var kr = window.BoxelGame.kickoffResult({});
     var kindMsg = (kr.kind === "touchback") ? "タッチバック！ 自陣25ヤードから。" :
                   (kr.kind === "fairCatch") ? "フェアキャッチ！ 自陣25ヤードから。" :
@@ -893,7 +1031,7 @@
     var losForReceiver = receivingIsHome
       ? (GOAL_NEAR + kr.yards)
       : (GOAL_FAR - kr.yards);
-    waitContinue(function () { onDone(losForReceiver); });
+    waitContinue(function () { restoreUnits(); onDone(losForReceiver); });
   }
 
   // FGのキック弧アニメーション（見た目のみ・結果は不変）。
@@ -1032,6 +1170,7 @@
     state.quarter = 1; state.clock = QUARTER_LENGTH;
     state.timeoutsHome = 3; state.timeoutsAway = 3; state.twoMinWarned = false;
     state.clockStopped = false; state.gameEnded = false;
+    state.hashX = 0; state.fwdPassUsed = false;
     hintsShown = {};
     setActiveUnits("offense");
     updateHUD();
@@ -1109,9 +1248,18 @@
     });
   }
 
+  // 隊形フェーズで「編成を変える」ボタンを出し入れする（カード枚数に影響させない）。
+  function showPersonnelBtn(on) {
+    var b = document.getElementById("personnelBtn");
+    if (!b) return;
+    b.style.display = on ? "block" : "none";
+    b.onclick = on ? function () { showPersonnelBtn(false); choosePersonnelUI(); } : null;
+  }
+
   // 攻撃開始時に編成タイプを選ぶ（隊形選択の前に呼ぶ）
   function choosePersonnelUI() {
     state.phase = "formation";
+    showPersonnelBtn(false);
     setBubble("攻撃だ！まず<b>編成</b>を選ぼう（どんな選手で攻める？）");
     setCards([
       { ico: "⚖️", t: "標準（11）",    d: "WR×3・TE・RBのバランス型",  fn: function () { applyPersonnel("balanced"); placeFormation("single"); chooseFormationUI(); } },
@@ -1131,7 +1279,8 @@
       else lead += pendingTape.name + " を<b>テーピング</b>中。すぐ復活するよ。 ";
       pendingTape = null;
     }
-    setBubble(lead + "まずは<b>隊形</b>を選んでね！");
+    showPersonnelBtn(true);   // この隊形フェーズでは編成を変え直せる（プレー毎の交代）
+    setBubble(lead + "まずは<b>隊形</b>を選んでね！（編成を変えるならボタンから）");
     setCards([
       { ico: "🎯", t: "ショットガン", d: "後ろから構えてパス向き", fn: function () { pickFormation("shotgun"); } },
       { ico: "💪", t: "アイ", d: "縦に並んで突進ラン向き", fn: function () { pickFormation("i"); } },
@@ -1167,6 +1316,7 @@
   }
 
   function pickFormation(f) {
+    showPersonnelBtn(false);   // プレー選択へ進むので編成変更ボタンは隠す
     state.formation = f; placeFormation(f); state.phase = "play";
     // 守備がこの隊形に反応してカバレッジを選び、テルを見せる（読み合い）
     state.defCoverage = window.BoxelGame.pickDefenseCoverage({ down: state.down, toGo: state.toGo });
@@ -1184,31 +1334,18 @@
     setCards(cards);
   }
 
-  // キック（フィールドゴール／パント）。成否はキッカーの kick 力と距離で決まる
+  // キック（フィールドゴール／パント）。FGは2タップのミニゲーム、成否はキッカーの kick 力と距離・狙い・パワーで決まる
   function kickPlay(type) {
     state.phase = "animating"; setCards([]);
     var kicker = byRole("P") || bestKicker();
-    var kf = statOf(kicker, "kick") / 6;
+    var kickStat = statOf(kicker, "kick");
+    var kf = kickStat / 6;
     var who = kicker.userData.name || "キッカー";
+    // キック局面：専用スペシャルチームをオンフィールドに（終了時 restoreUnits で戻す）
+    setActiveUnits("special");
+    placeSpecialFormation(state.los, true);
     if (type === "fg") {
-      var dist = Math.round((GOAL_FAR - state.los) + 17);
-      var prob = window.BoxelGame.fgProbability(state.los, statOf(kicker, "kick"));
-      var ok = Math.random() < prob;
-      setBubble(who + " が " + dist + "ヤードのフィールドゴールを狙う…！");
-      // ボールが弧を描いてゴールポスト(z=112)へ向かう短いアニメ（成功は通る/失敗は外れる）
-      animateFGKick(112, ok, function () {
-        if (ok) {
-          state.home += 3; flashScore();
-          setBubble("ホイッスル先生：<b>成功！ 3点</b>！ ナイスキック！");
-          // FGキック後は得点側がキックオフ（相手が受球）
-          waitContinue(function () { startKickoff(false, function (losForAway) {
-            state.los = losForAway; endPossession(0.1);
-          }); });
-        } else {
-          setBubble("ホイッスル先生：<b>失敗…</b> 惜しい！ 相手ボールへ。");
-          endPossession(0);
-        }
-      });
+      startFGMinigame(who, kickStat);
     } else {
       // パント: パントリターン分を差し引く
       var dpunt = rand(30, 45) * (0.8 + 0.2 * kf);
@@ -1220,8 +1357,65 @@
         var rawLos = Math.min(GOAL_FAR - 5, Math.round(state.los + dpunt));
         // パントリターン分だけ手前（自分側）に戻す（受球側が前に出る）
         state.los = Math.max(GOAL_NEAR + 5, rawLos - pr.yards);
+        restoreUnits();
         endPossession(Math.min(0.45, (dpunt - pr.yards) / 100));
       }, 1000);
+    }
+  }
+
+  // FG結果を適用してキックオフ/攻守交代へ進む（ミニゲーム・確率どちらの判定でも共通）。
+  function resolveFGResult(ok, reason) {
+    animateFGKick(112, ok, function () {
+      restoreUnits();
+      if (ok) {
+        state.home += 3; flashScore();
+        setBubble("ホイッスル先生：<b>成功！ 3点</b>！ ナイスキック！");
+        waitContinue(function () { startKickoff(false, function (losForAway) {
+          state.los = losForAway; endPossession(0.1);
+        }); });
+      } else {
+        var miss = (reason === "short") ? "ショート（届かず）" : (reason === "wideLeft") ? "左に外れた" : (reason === "wideRight") ? "右に外れた" : "外れた";
+        setBubble("ホイッスル先生：<b>失敗…</b> " + miss + "！ 相手ボールへ。");
+        endPossession(0);
+      }
+    });
+  }
+
+  // FGミニゲーム: 狙いメーター→パワーメーターを各1タップで止め、fgResolve で判定する。
+  // メーターは animate() ループの updateFGMeter(dt) が駆動する。
+  function startFGMinigame(who, kickStat) {
+    var xb = state.hashX || 0, zb = state.los;
+    var dist = Math.round((GOAL_FAR - zb) + 17);
+    var sw = window.BoxelGame.fgAimSwing(xb, zb);
+    fgMeter = {
+      stage: "aim", t: 0, who: who, kickStat: kickStat, xb: xb, zb: zb,
+      aimCenter: sw.center, aimHalf: sw.half, aim: sw.center,
+      power: 0
+    };
+    setBubble(who + " が " + dist + "ヤードのFGを狙う！ まず<b>狙い</b>をタップで止めよう。");
+    setCards([{ ico: "🎯", t: "狙いを止める", d: "中央で止めるほど正確", fn: stopFGAim }]);
+  }
+  function stopFGAim() {
+    if (!fgMeter || fgMeter.stage !== "aim") return;
+    fgMeter.stage = "power"; fgMeter.t = 0;
+    setBubble("ホイッスル先生：狙い決定！ 次は<b>パワー</b>をタップで止めよう（遠いほど強く！）。");
+    setCards([{ ico: "💥", t: "パワーを止める", d: "強すぎても弱すぎてもダメ", fn: stopFGPower }]);
+  }
+  function stopFGPower() {
+    if (!fgMeter || fgMeter.stage !== "power") return;
+    var m = fgMeter; fgMeter = null; setCards([]);
+    var res = window.BoxelGame.fgResolve({ aim: m.aim, power: m.power, xb: m.xb, zb: m.zb, kickStat: m.kickStat });
+    state.phase = "animating";
+    resolveFGResult(res.success, res.reason);
+  }
+  // メーター進行（aim は左右に振れ、power は 0→1 を往復）。タップ時点の値を fgMeter に確定。
+  function updateFGMeter(dt) {
+    if (!fgMeter) return;
+    fgMeter.t += dt;
+    if (fgMeter.stage === "aim") {
+      fgMeter.aim = fgMeter.aimCenter + Math.sin(fgMeter.t * 3.0) * fgMeter.aimHalf;
+    } else if (fgMeter.stage === "power") {
+      fgMeter.power = 0.5 + 0.5 * Math.sin(fgMeter.t * 3.2);   // 0..1 を往復
     }
   }
 
@@ -1535,7 +1729,9 @@
     BC.DEFENSE.forEach(function (c) { var b = BC.makePlayer(c, BC.TEAM.away); awayDef.push(b); scene.add(b); });
     BC.HOME_DEFENSE.forEach(function (c) { var b = BC.makePlayer(c, BC.TEAM.home); homeDef.push(b); scene.add(b); });
     BC.AWAY_OFFENSE.forEach(function (c) { var a = BC.makePlayer(c, BC.TEAM.away); awayOff.push(a); scene.add(a); });
-    // 初期は攻撃フェーズ（homeOff/awayDef をオンフィールドに）
+    BC.HOME_SPECIAL.forEach(function (c) { var a = BC.makePlayer(c, BC.TEAM.home); homeSpec.push(a); scene.add(a); });
+    BC.AWAY_SPECIAL.forEach(function (c) { var b = BC.makePlayer(c, BC.TEAM.away); awaySpec.push(b); scene.add(b); });
+    // 初期は攻撃フェーズ（homeOff/awayDef をオンフィールドに。特殊ユニットは非表示）
     setActiveUnits("offense");
 
     ball = makeBall(); scene.add(ball);
@@ -1569,6 +1765,7 @@
     updateAnim(dt);
     updateDefenseAnim(dt);
     updateFGKick(dt);
+    updateFGMeter(dt);
     ballMarker.position.set(ball.position.x, ball.position.y, ball.position.z);
     var t = clock.elapsedTime;
     ballMarker.children[0].rotation.z = t * 2;

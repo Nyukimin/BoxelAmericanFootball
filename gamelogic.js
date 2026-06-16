@@ -471,6 +471,52 @@
   }
 
   /**
+   * パスプレー固有の反則を返す（純粋関数・高乱数側で発火）。約8%。
+   * パス（short/long）のときのみ呼ぶこと。ラン/キックでは呼ばない。
+   * テストは Math.random()=0 固定のため r > 0.92 でのみ発火し誤発火しない。
+   * @param {object} opts
+   *   opts.play    {string} "short"|"long"（パス種別）
+   *   opts.complete{boolean} パスが成功したか（成功時は grounding を出さない）
+   *   opts.random  {number} [0,1) 省略時 Math.random()（発火判定）
+   *   opts.random2 {number} [0,1) 省略時 Math.random()（種類判定）
+   * @returns {null | { type:string, yards:number, lossOfDown:boolean, label:string }}
+   *   yards: 罰退ヤード（攻撃の損失・正値）。lossOfDown: ダウン消費を伴うか。
+   */
+  function rollPassFoul(opts) {
+    var play     = (opts && opts.play) ? opts.play : "short";
+    var complete = !!(opts && opts.complete);
+    if (play !== "short" && play !== "long") return null;
+    var r = (opts && opts.random != null) ? opts.random : Math.random();
+    if (r < 0.92) return null;
+    var r2 = (opts && opts.random2 != null) ? opts.random2 : Math.random();
+    // インテンショナルグラウンディングはパス不成功時のみ（QBが投げ捨てた扱い）
+    if (r2 < 0.34 && !complete) {
+      return { type: "grounding", yards: 8, lossOfDown: true, label: "インテンショナルグラウンディング" };
+    }
+    if (r2 < 0.67) {
+      return { type: "ineligible", yards: 5, lossOfDown: false, label: "イリジブルレシーバーダウンフィールド" };
+    }
+    return { type: "illegalForward", yards: 5, lossOfDown: true, label: "イリーガルフォワードパス" };
+  }
+
+  /**
+   * ターンオーバー（INT/ファンブル喪失）後の相手リターンを返す（純粋関数・乱数使用）。
+   * @param {object} opts
+   *   opts.random  {number} [0,1) 省略時 Math.random()（リターン量）
+   *   opts.random2 {number} [0,1) 省略時 Math.random()（TD判定・高乱数側）
+   * @returns {{ yards: number, td: boolean }}
+   *   yards: 奪った側が戻すヤード（0〜30目安）。td: リターンTD（低確率・高乱数側）。
+   */
+  function turnoverReturn(opts) {
+    var r  = (opts && opts.random  != null) ? opts.random  : Math.random();
+    var r2 = (opts && opts.random2 != null) ? opts.random2 : Math.random();
+    var td = r2 > 0.94;                       // リターンTDは約6%（高乱数側で発火）
+    if (td) return { yards: Math.round(30 + r * 40), td: true };
+    var yards = Math.round(r * 22);           // 0〜22ヤード
+    return { yards: yards, td: false };
+  }
+
+  /**
    * 1プレーで消費するゲームクロックの秒数を返す（純粋関数）。
    * @param {object} opts opts.kind {string} "run"|"short_complete"|"long_complete"|"incomplete"|"oob"|"score"|"timeout"|"turnover"
    * @returns {number} 消費秒数
@@ -485,6 +531,8 @@
     outcome: outcome,
     rollPrePenalty: rollPrePenalty,
     rollPlayPenalty: rollPlayPenalty,
+    rollPassFoul: rollPassFoul,
+    turnoverReturn: turnoverReturn,
     opponentDrive: opponentDrive,
     fgProbability: fgProbability,
     fgAngleWindow: fgAngleWindow,

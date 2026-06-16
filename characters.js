@@ -135,6 +135,38 @@
     { name: "敵RB",   role: "RB", animal: "wolf", fur: FUR.wolf, stats: "speedy" }
   ];
 
+  // ===== 味方（home）のスペシャルチーム11体 =====
+  // K(キッカー)/P(パンター)/LS(ロングスナッパー)/RET(リターナー)/COV(カバー)で構成。
+  // キック局面（FG・パント・キックオフ）でオンフィールドに出る専用ユニット。
+  var HOME_SPECIAL = [
+    { name: "キック", role: "P",  animal: "owl",      fur: FUR.owl,      stats: "kicker" },
+    { name: "パント", role: "P",  animal: "rabbit",   fur: FUR.rabbit,   stats: "kicker" },
+    { name: "スナップ", role: "OL", animal: "rhino",    fur: FUR.rhino,    stats: "power" },
+    { name: "ホールド", role: "WR", animal: "cat",      fur: FUR.cat,      stats: "hands" },
+    { name: "リターン", role: "RB", animal: "rabbit",   fur: FUR.rabbit,   stats: "speedy" },
+    { name: "カバー1", role: "WR", animal: "squirrel", fur: FUR.squirrel, stats: "speedy" },
+    { name: "カバー2", role: "WR", animal: "cat",      fur: FUR.cat,      stats: "speedy" },
+    { name: "ガナー1", role: "OL", animal: "bear",     fur: FUR.bear,     stats: "power" },
+    { name: "ガナー2", role: "OL", animal: "bear",     fur: FUR.bear,     stats: "power" },
+    { name: "ブロク1", role: "OL", animal: "rhino",    fur: FUR.rhino,    stats: "power" },
+    { name: "ブロク2", role: "OL", animal: "bear",     fur: FUR.bear,     stats: "power" }
+  ];
+
+  // ===== 相手（away）のスペシャルチーム11体 =====  all wolf
+  var AWAY_SPECIAL = [
+    { name: "敵K",   role: "P",  animal: "wolf", fur: FUR.wolf, stats: "kicker" },
+    { name: "敵P",   role: "P",  animal: "wolf", fur: FUR.wolf, stats: "kicker" },
+    { name: "敵LS",  role: "OL", animal: "wolf", fur: FUR.wolf, stats: "power" },
+    { name: "敵HD",  role: "WR", animal: "wolf", fur: FUR.wolf, stats: "hands" },
+    { name: "敵RET", role: "RB", animal: "wolf", fur: FUR.wolf, stats: "speedy" },
+    { name: "敵COV1",role: "WR", animal: "wolf", fur: FUR.wolf, stats: "speedy" },
+    { name: "敵COV2",role: "WR", animal: "wolf", fur: FUR.wolf, stats: "speedy" },
+    { name: "敵GN1", role: "OL", animal: "wolf", fur: FUR.wolf, stats: "power" },
+    { name: "敵GN2", role: "OL", animal: "wolf", fur: FUR.wolf, stats: "power" },
+    { name: "敵BL1", role: "OL", animal: "wolf", fur: FUR.wolf, stats: "power" },
+    { name: "敵BL2", role: "OL", animal: "wolf", fur: FUR.wolf, stats: "power" }
+  ];
+
   // ===== マネージャー（撮影担当）の設定 =====
   var MANAGER = { name: "ミケ", fur: 0xf0e2c8, jacket: 0x2f9e8f };
 
@@ -309,6 +341,7 @@
     FUR: FUR, TEAM: TEAM, ROLES: ROLES, STAT_PRESETS: STAT_PRESETS,
     OFFENSE: OFFENSE, DEFENSE: DEFENSE,
     HOME_DEFENSE: HOME_DEFENSE, AWAY_OFFENSE: AWAY_OFFENSE,
+    HOME_SPECIAL: HOME_SPECIAL, AWAY_SPECIAL: AWAY_SPECIAL,
     MANAGER: MANAGER,
     box: box, makeAnimal: makeAnimal, makeManager: makeManager,
     makePlayer: makePlayer, resolveStats: resolveStats
