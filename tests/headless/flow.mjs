@@ -456,14 +456,17 @@ if (loadError) {
 }
 
 // ============================================================
-// 9. (b) clickStart() 後に隊形カードが 4 枚
+// 9. (b) clickStart() 後に編成カード3枚→隊形カード4枚
 // ============================================================
 // start 画面を非表示にして resetGame() を呼ぶ
 if (loadError === null) {
   clickStart();
   pump(5);
+  // 編成ステップ追加により、まず編成カード3枚が出る→先頭を選んで隊形フェーズへ
+  const personnelCs = cards();
+  if (personnelCs.length >= 1 && personnelCs[0].onclick) personnelCs[0].onclick();
   const cs = cards();
-  assert("(b) clickStart() 後、隊形カードが 4 枚", cs.length === 4);
+  assert("(b) 編成選択後、隊形カードが 4 枚", cs.length === 4);
 }
 
 // ============================================================
@@ -516,10 +519,12 @@ if (loadError === null) {
   // 現在の状態から最大 20 回プレーして 4th down を狙う。
   let reachedFourth = false;
   for (let attempt = 0; attempt < 20; attempt++) {
-    // 隊形フェーズなら隊形選択
     const cs = cards();
-    if (cs.length === 4) {
-      // 隊形カード（4枚）なのでカード[0]選択
+    if (cs.length === 3) {
+      // 編成カード（3枚）→先頭を選択して隊形フェーズへ
+      if (cs[0].onclick) cs[0].onclick();
+    } else if (cs.length === 4) {
+      // 隊形カード（4枚）→先頭を選択してプレーフェーズへ
       if (cs[0].onclick) cs[0].onclick();
     }
     // プレーフェーズ
@@ -539,11 +544,12 @@ if (loadError === null) {
     }
   }
 
-  // reachedFourth でない場合もう一度隊形選択フェーズを確認
+  // reachedFourth でない場合もう一度編成→隊形選択フェーズを確認
   if (reachedFourth === false) {
-    // 隊形カードを選択して再確認
     const cs = cards();
-    if (cs.length === 4 && cs[0].onclick) cs[0].onclick();
+    if (cs.length === 3 && cs[0].onclick) cs[0].onclick(); // 編成フェーズなら先に選ぶ
+    const cs2 = cards();
+    if (cs2.length === 4 && cs2[0].onclick) cs2[0].onclick();
     if (cards().length === 5) reachedFourth = true;
   }
 
@@ -590,7 +596,14 @@ if (loadError === null) {
       break;
     }
     const cs = cards();
-    if (cs.length === 4) {
+    if (cs.length === 3) {
+      // 3枚カード: 編成 / 守備構え / 守備作戦を区別する
+      // 守備作戦（マン/ゾーン/ブリッツ）選択後はアニメが走るため pump が必要
+      const html0 = cs[0]._innerHTML || "";
+      const isCoverage = html0.includes("マン") || html0.includes("ゾーン") || html0.includes("ブリッツ");
+      if (cs[0].onclick) cs[0].onclick();
+      if (isCoverage) pump(60);
+    } else if (cs.length === 4) {
       // 隊形選択
       if (cs[0].onclick) cs[0].onclick();
     } else if (cs.length >= 3) {
@@ -630,7 +643,9 @@ if (loadError === null) {
 
   // 最初の攻守交代を引き起こす（ターンオーバー: ロングパスでインターセプト）
   // Math.random=0 のとき long pass は intT=0.1 > 0 → r < intT → インターセプト → endPossession(0)
-  // まず隊形を選ぶ
+  // 編成カード(3枚)を先に選んでから隊形へ進む
+  const persCs0 = cards();
+  if (persCs0.length === 3 && persCs0[0].onclick) persCs0[0].onclick();
   const cs0 = cards();
   if (cs0.length === 4 && cs0[0].onclick) cs0[0].onclick(); // shotgun
 
@@ -661,6 +676,9 @@ if (loadError === null) {
   pump(5);
 
   // 最初の攻守交代を引き起こす（ロングパスでインターセプト）
+  // 編成カード(3枚)を先に選んでから隊形へ進む
+  const persH = cards();
+  if (persH.length === 3 && persH[0].onclick) persH[0].onclick();
   const csH = cards();
   if (csH.length === 4 && csH[0].onclick) csH[0].onclick(); // shotgun
 
@@ -718,13 +736,19 @@ if (loadError === null) {
 
   // 前テスト(i)の続き: 相手の攻撃を最後まで進める（毎ダウン先頭カードを選ぶ）
   let backToOffense = false, endedJ = false;
-  for (let k = 0; k < 24; k++) {
+  for (let k = 0; k < 48; k++) {
     const startEl2 = getElementById("start");
     if (startEl2.style.display !== "none" && startEl2._h1 && startEl2._h1.textContent.includes("試合終了")) { endedJ = true; break; }
     const cs = cards();
     // 攻撃隊形(4枚, ショットガン等)に戻れば成功
     if (cs.length === 4 && cs.map(c => c._innerHTML || "").some(h => h.includes("ショットガン") || h.includes("シングルバック") || h.includes("アイ"))) { backToOffense = true; break; }
-    if (cs.length >= 1 && cs[0].onclick) { cs[0].onclick(); pump(60); }
+    if (cs.length === 3) {
+      // 守備作戦（マン/ゾーン/ブリッツ）選択後はアニメが走るため pump が必要
+      const html0 = cs[0]._innerHTML || "";
+      const isCoverage = html0.includes("マン") || html0.includes("ゾーン") || html0.includes("ブリッツ");
+      if (cs[0].onclick) cs[0].onclick();
+      if (isCoverage) pump(60);
+    } else if (cs.length >= 1 && cs[0].onclick) { cs[0].onclick(); pump(60); }
     else pump(10);
   }
 
@@ -748,6 +772,9 @@ if (loadError === null) {
   clickStart();
   pump(5);
 
+  // 編成カード(3枚)を先に選んでから隊形へ進む
+  const persKlm = cards();
+  if (persKlm.length === 3 && persKlm[0].onclick) persKlm[0].onclick();
   // 隊形選択（シングルバック = index 2、RBが los 前方に立つ）
   const csKlm = cards();
   if (csKlm.length === 4 && csKlm[2].onclick) csKlm[2].onclick(); // シングルバック

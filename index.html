@@ -37,6 +37,20 @@
   .hint { font-size: 12px; opacity: .75; }
   #tapNext { display: none; margin-top: 8px; text-align: center; font-size: 14px; font-weight: 700; color: #2f4d22; background: #ffe9b8; border: 2px solid #ffd166; border-radius: 10px; padding: 9px; cursor: pointer; animation: tapPulse 1s ease-in-out infinite; }
   @keyframes tapPulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
+  #helpWrap { top: 52px; right: 14px; pointer-events: auto; }
+  #helpBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  #help { position: absolute; inset: 0; background: rgba(20,30,16,.92); z-index: 20; display: none; overflow-y: auto; pointer-events: auto; padding: 24px 14px 40px; }
+  #help .sheet { background: #fff; color: #2f4d22; max-width: 680px; margin: 0 auto; border-radius: 16px; padding: 22px; line-height: 1.6; }
+  #help h2 { color: #2f6b3c; font-size: 24px; margin-bottom: 4px; }
+  #help .lead { color: #6b7d59; font-size: 13px; margin-bottom: 6px; }
+  #help h3 { color: #d9622b; font-size: 17px; margin: 18px 0 6px; border-bottom: 2px solid #ffe1b0; padding-bottom: 3px; }
+  #help p, #help li { font-size: 14px; }
+  #help ul { margin: 4px 0 4px 18px; }
+  #help table { border-collapse: collapse; width: 100%; margin: 6px 0; font-size: 13px; }
+  #help th, #help td { border: 1px solid #d8e6c8; padding: 5px 8px; text-align: center; }
+  #help th { background: #f0f7e6; }
+  #help b { color: #d9622b; }
+  #help .close { display: block; margin: 20px auto 0; background: #ee8e3c; color: #fff; border: none; border-radius: 12px; padding: 11px 28px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; }
 </style>
 </head>
 <body>
@@ -56,6 +70,62 @@
   <button data-v="top">真上</button>
   <button data-v="player">選手視点</button>
 </div>
+<div class="hud" id="helpWrap"><button id="helpBtn">？ ヘルプ</button></div>
+
+<div id="help">
+  <div class="sheet">
+    <h2>アメリカンフットボール 基礎ガイド</h2>
+    <div class="lead">チームを支えるために知っておきたい、ルール・ポジション・作戦の考え方をまとめています。</div>
+
+    <h3>1. 基本ルール（4ダウン制）</h3>
+    <ul>
+      <li>オフェンスは<b>4回の攻撃（ダウン）で10ヤード前進</b>を目指す。達成すると新たな4ダウン（<b>ファーストダウン</b>）を得て攻撃を継続できる。</li>
+      <li>4ダウン以内に10ヤードへ届かない、パスをインターセプトされる、ファンブルを失うと<b>ターンオーバー（攻守交代）</b>。</li>
+      <li>ボールをエンドゾーンへ運ぶと<b>タッチダウン（6点＋追加点で計7点が基本）</b>。攻めきれない位置では<b>フィールドゴール（3点・キック）</b>を選択する。</li>
+      <li>陣地は自陣・敵陣の2区分で表す（例：敵陣35ヤード）。残りダウン数とこの距離が、采配の判断材料になる。</li>
+    </ul>
+
+    <h3>2. ポジション（オフェンス）</h3>
+    <ul>
+      <li><b>QB</b>（クォーターバック）：攻撃の司令塔。パスを投げ、プレーを統率する。</li>
+      <li><b>RB</b>（ランニングバック）：ボールを持って走る主力。</li>
+      <li><b>WR</b>（ワイドレシーバー）：パスを捕る。スピードと捕球が問われる。</li>
+      <li><b>TE</b>（タイトエンド）：ブロックとレシーブを兼ねる万能型。</li>
+      <li><b>OL</b>（オフェンシブライン）×5：前線でブロックし、走路とパスを投げる時間を作る。</li>
+    </ul>
+
+    <h3>3. ポジション（ディフェンス）</h3>
+    <ul>
+      <li><b>DL</b>（ディフェンシブライン）×4：最前線でブロックを破り、ランを止めQBに圧力をかける。</li>
+      <li><b>LB</b>（ラインバッカー）×3：中盤を担い、ラン阻止とパスカバーの両面を見る。</li>
+      <li><b>CB</b>（コーナーバック）×2：WRをマンツーマン等でカバーする俊足の選手。</li>
+      <li><b>S</b>（セーフティ）×2：最後方で、ロングパスやビッグプレーを防ぐ最終ライン。</li>
+    </ul>
+
+    <h3>4. 編成タイプ（パーソネルグルーピング）</h3>
+    <p>2桁の数字は <b>[RBの人数][TEの人数]</b> を表す慣用表記。残りがWRで、QB×1・OL×5は固定。</p>
+    <table>
+      <tr><th>表記</th><th>RB</th><th>TE</th><th>WR</th><th>狙い</th></tr>
+      <tr><td>標準 <b>11</b></td><td>1</td><td>1</td><td>3</td><td>ラン・パス両用。最も使用頻度が高い</td></tr>
+      <tr><td>ラン寄り <b>21</b></td><td>2</td><td>1</td><td>2</td><td>ブロッカーを増やし走りで押す</td></tr>
+      <tr><td>パス寄り <b>10</b></td><td>1</td><td>0</td><td>4</td><td>受け手を広げてパスで攻める</td></tr>
+    </table>
+    <p>計算式：<b>WR＝5−（RB＋TE）</b>。ダウン＆距離やフィールド位置に応じて使い分ける。</p>
+
+    <h3>5. 読み合い（カバレッジと相性）</h3>
+    <p>ディフェンスのアライメント（構え）を読み、有効なプレーを選ぶのが攻撃の駆け引き。三すくみの関係がある：</p>
+    <ul>
+      <li><b>ブリッツ</b>（QBへ追加で突進）には、<b>クイックなショートパス</b>で圧力をかわす。</li>
+      <li><b>マンカバレッジ</b>（receiver に密着）には、<b>縦のロングパス</b>で振り切る。</li>
+      <li><b>ゾーン</b>（エリア分担で守る）には、<b>ラン</b>で手薄な前線を突く。</li>
+    </ul>
+
+    <h3>6. ユニットの総入れ替え</h3>
+    <p>オフェンス11人とディフェンス11人は別メンバーで、攻守交代のたびにフィールドの11人を総入れ替えする（役割の専門分化）。さらにキック系の<b>スペシャルチーム</b>という第3のユニットもある。</p>
+
+    <button class="close" id="helpClose">とじる</button>
+  </div>
+</div>
 
 <div class="hud" id="panel">
   <div class="bubble" id="bubble">ホイッスル先生：まずは隊形を選んでね！</div>
@@ -74,6 +144,8 @@
   var scene, camera, renderer;
   var ball, ballMarker, trail, trailPts = [], manager = null;
   var offense = [], defense = [], carrier = null, qb = null, rb = null, wr = null;
+  // 4ユニット: home攻撃 / home守備 / away攻撃 / away守備
+  var homeOff = [], homeDef = [], awayOff = [], awayDef = [];
   var clock;
 
   var GOAL_NEAR = 10, GOAL_FAR = 110, MAX_DRIVES = 6;
@@ -81,7 +153,8 @@
     los: 40, toGo: 10, down: 1, home: 0, away: 0, drive: 0,
     phase: "formation", formation: null, play: null, taped: null,
     mode: "offense", cpuStyle: null, defLos: 40, defPin: 0,
-    oppLos: 40, oppDown: 1, oppToGo: 10, defFront: "balanced"
+    oppLos: 40, oppDown: 1, oppToGo: 10, defFront: "balanced",
+    personnel: "balanced"
   };
   var hintsShown = {};
   var pendingTape = null, tapeCooldown = 2;
@@ -94,6 +167,43 @@
   function lerp(a, b, t) { return a + (b - a) * t; }
   function rand(a, b) { return a + Math.random() * (b - a); }
   function byRole(r) { for (var i = 0; i < offense.length; i++) { if (offense[i].userData.role === r) return offense[i]; } return null; }
+
+  // 攻守モードに応じてオンフィールドユニットを切り替え、非表示ユニットを隠す
+  // mode="offense": home攻撃/away守備がオンフィールド、home守備/away攻撃を非表示
+  // mode="defense": home守備/away攻撃がオンフィールド、home攻撃/away守備を非表示
+  function setActiveUnits(mode) {
+    if (mode === "offense") {
+      offense = homeOff;
+      defense = awayDef;
+      homeOff.forEach(function (p) { p.visible = true; });
+      awayDef.forEach(function (p) { p.visible = true; });
+      homeDef.forEach(function (p) { p.visible = false; });
+      awayOff.forEach(function (p) { p.visible = false; });
+    } else {
+      // mode === "defense"
+      offense = homeDef;
+      defense = awayOff;
+      homeDef.forEach(function (p) { p.visible = true; });
+      awayOff.forEach(function (p) { p.visible = true; });
+      homeOff.forEach(function (p) { p.visible = false; });
+      awayDef.forEach(function (p) { p.visible = false; });
+    }
+  }
+  // フレックス5体（QB・OL 以外）の role を編成タイプで再割り当て（stats/animal/name は不変）
+  function applyPersonnel(type) {
+    state.personnel = type;
+    var roles = (type === "run")  ? ["WR","WR","TE","RB","RB"] :
+                (type === "pass") ? ["WR","WR","WR","WR","RB"] :
+                                    ["WR","WR","WR","TE","RB"];
+    var idx = 0;
+    for (var i = 0; i < offense.length; i++) {
+      var r = offense[i].userData.role;
+      if (r !== "QB" && r !== "OL") {
+        offense[i].userData.role = roles[idx++];
+        if (idx >= roles.length) break;
+      }
+    }
+  }
   function statOf(p, key) { return (p && p.userData && p.userData.stats && p.userData.stats[key]) || 6; }
   function teamStat(list, role, key) { var s = 0, n = 0; list.forEach(function (p) { if (p.userData.role === role) { s += statOf(p, key); n++; } }); return n ? s / n : 6; }
   function defenseStat(key) { var s = 0; defense.forEach(function (p) { s += statOf(p, key); }); return defense.length ? s / defense.length : 6; }
@@ -152,18 +262,82 @@
   }
 
   function placeFormation(formation) {
-    var spread = [-9, -4.5, 0, 4.5, 9];
-    var roles = ["owl", "rabbit", "squirrel", "bear", "rhino"];
+    var los = state.los;
+    // 全選手リセット
+    for (var i = 0; i < offense.length; i++) { offense[i].position.set(0, 0, los); offense[i].rotation.set(0, 0, 0); }
+
+    // ロール別グループを収集
+    var ols = [], tes = [], wrs = [], rbs = [];
     for (var i = 0; i < offense.length; i++) {
-      offense[i].position.set(spread[i], 0, state.los);
-      offense[i].rotation.set(0, 0, 0);
+      var r = offense[i].userData.role;
+      if (r === "OL") ols.push(offense[i]);
+      else if (r === "TE") tes.push(offense[i]);
+      else if (r === "WR") wrs.push(offense[i]);
+      else if (r === "RB") rbs.push(offense[i]);
     }
-    qb = byRole("QB") || offense[0]; rb = byRole("RB") || offense[1]; wr = byRole("WR") || offense[2];
-    if (formation === "shotgun") { qb.position.set(0, 0, state.los - 6); wr.position.set(11, 0, state.los); }
-    else if (formation === "i") { qb.position.set(0, 0, state.los - 2.5); rb.position.set(0, 0, state.los - 6.5); }
-    else if (formation === "single") { qb.position.set(0, 0, state.los - 3); rb.position.set(0, 0, state.los - 6); wr.position.set(11, 0, state.los); }
-    else if (formation === "goal") { for (var k = 0; k < offense.length; k++) offense[k].position.set(spread[k] * 0.5, 0, state.los); qb.position.set(0, 0, state.los - 2); rb.position.set(0, 0, state.los - 4); }
-    for (var d = 0; d < defense.length; d++) { defense[d].position.set(spread[d], 0, state.los + 4 + (d % 2)); defense[d].rotation.set(0, Math.PI, 0); }
+
+    // OL(5体)配置
+    var olX = [-3.5, -1.75, 0, 1.75, 3.5];
+    for (var i = 0; i < ols.length; i++) { ols[i].position.set(olX[i] || 0, 0, los); }
+
+    // TE配置: 1人目 x=+5、2人目（いれば）x=-5
+    if (tes.length > 0) tes[0].position.set(5, 0, los);
+    if (tes.length > 1) tes[1].position.set(-5, 0, los);
+
+    // WR配置: ワイド/スロットに分散
+    var wrX = [-13, 13, 9, -9];
+    for (var i = 0; i < wrs.length; i++) { wrs[i].position.set(wrX[i] || 0, 0, los); }
+
+    // RB配置: 1人目バックフィールド、2人目(FB)前
+    if (rbs.length > 0) rbs[0].position.set(0, 0, los - 5);
+    if (rbs.length > 1) rbs[1].position.set(0, 0, los - 3);
+
+    // グローバル参照を更新
+    qb = byRole("QB") || offense[0];
+    rb = byRole("RB") || offense[1];
+    wr = byRole("WR") || offense[2];
+
+    // formation 別 QB 配置
+    if (formation === "shotgun") {
+      qb.position.set(0, 0, los - 5);
+      // slot WR: 2番目以降で |x| が最小のものを中央寄りに
+      if (wrs.length > 1) {
+        var slotWr = wrs[1];
+        for (var i = 2; i < wrs.length; i++) {
+          if (Math.abs(wrs[i].position.x) < Math.abs(slotWr.position.x)) slotWr = wrs[i];
+        }
+        slotWr.position.set(5, 0, los);
+      }
+    } else if (formation === "i") {
+      qb.position.set(0, 0, los - 1);
+      if (rbs.length > 0) rbs[0].position.set(0, 0, los - 5);
+    } else if (formation === "single") {
+      qb.position.set(0, 0, los - 1.5);
+      if (rbs.length > 0) rbs[0].position.set(0, 0, los - 5);
+    } else if (formation === "goal") {
+      // 全選手の x を 0.6 倍に収縮
+      for (var i = 0; i < offense.length; i++) { offense[i].position.x *= 0.6; }
+      qb.position.set(0, 0, los - 1.5);
+      if (rbs.length > 0) rbs[0].position.set(0, 0, los - 3);
+    }
+
+    // 守備(11体)をロール別に整列
+    var dlX = [-3.5, -1.2, 1.2, 3.5];
+    var lbX = [-5, 0, 5];
+    var cbX = [-13, 13];
+    var sX  = [-6, 6];
+    var dlIdx = 0, lbIdx = 0, cbIdx = 0, sIdx = 0;
+    for (var d = 0; d < defense.length; d++) {
+      var dr = defense[d].userData.role;
+      defense[d].position.y = 0;
+      defense[d].rotation.set(0, Math.PI, 0);
+      if (dr === "DL") { defense[d].position.set(dlX[dlIdx] || 0, 0, los + 1);  dlIdx++; }
+      else if (dr === "LB") { defense[d].position.set(lbX[lbIdx] || 0, 0, los + 4);  lbIdx++; }
+      else if (dr === "CB") { defense[d].position.set(cbX[cbIdx] || 0, 0, los + 1.5); cbIdx++; }
+      else if (dr === "S")  { defense[d].position.set(sX[sIdx]   || 0, 0, los + 11); sIdx++; }
+      else { defense[d].position.set(0, 0, los + 4); }
+    }
+
     setBall(qb.position.x, qb.position.z);
   }
 
@@ -290,6 +464,7 @@
 
   // ===== 相手（CPU）の攻撃：あなたと同じ4ダウン制。毎ダウン守りの作戦を選ぶ。=====
   function startOppPossession() {
+    setActiveUnits("defense");        // homeDef/awayOff に切り替え（placeOppFormation より前）
     state.drive += 1;                 // この攻守交代を1ドライブとして数える
     state.oppLos = state.defLos;
     state.oppDown = 1;
@@ -386,29 +561,35 @@
     state.down = 1; state.toGo = 10;
     state.los = Math.min(80, Math.max(15, yourLos));
     state.formation = null; state.phase = "formation";
-    placeFormation("single"); updateHUD(); chooseFormationUI();
+    setActiveUnits("offense");        // homeOff/awayDef に戻す（placeFormation より前）
+    placeFormation("single"); updateHUD(); choosePersonnelUI();
   }
 
-  // 相手=攻撃側 / 味方=守備側 に整列（見せるだけ）
+  // 相手=攻撃側 / 味方=守備側 に整列（見せるだけ）。11体を均等分散。
   function placeOppFormation() {
-    var spread = [-9, -4.5, 0, 4.5, 9];
     var oppLos = state.oppLos;
-    for (var d = 0; d < defense.length; d++) {
-      defense[d].position.set(spread[d], 0, oppLos + 1);
+    var n = defense.length;
+    for (var d = 0; d < n; d++) {
+      var dx = (n > 1) ? (d * (24 / (n - 1)) - 12) : 0;
+      defense[d].position.set(dx, 0, oppLos + 1);
       defense[d].rotation.set(0, Math.PI, 0);   // 自陣ゴール(-z)方向を向く
     }
     var dline = Math.max(GOAL_NEAR + 2, oppLos - 7);
-    for (var o = 0; o < offense.length; o++) {
-      offense[o].position.set(spread[o], 0, dline);
+    var m = offense.length;
+    for (var o = 0; o < m; o++) {
+      var ox = (m > 1) ? (o * (24 / (m - 1)) - 12) : 0;
+      offense[o].position.set(ox, 0, dline);
       offense[o].rotation.set(0, 0, 0);         // 相手(+z)方向を向く
     }
     setBall(0, oppLos - 0.3, 1.3);
   }
 
   // 相手の1プレーを可視化する（startZ→endZ へ前進、味方が追って止める/得点）。
+  // defense=awayOff（攻撃ロール）のため CB は存在しない。RB/WR/先頭の順で carrier を選ぶ。
   function startDefensePlay(startZ, endZ, td, onDone) {
     var carrier = null;
-    for (var i = 0; i < defense.length; i++) { if (defense[i].userData.role === "CB") { carrier = defense[i]; break; } }
+    for (var i = 0; i < defense.length; i++) { if (defense[i].userData.role === "RB") { carrier = defense[i]; break; } }
+    if (!carrier) { for (var i = 0; i < defense.length; i++) { if (defense[i].userData.role === "WR") { carrier = defense[i]; break; } } }
     if (!carrier) carrier = defense[0];
     carrier.position.set(0, 0, startZ);
     var blockers = defense.filter(function (x) { return x !== carrier; });
@@ -480,7 +661,8 @@
     state.down = 1; state.toGo = 10; state.los = 40; state.formation = null; state.phase = "formation";
     state.mode = "offense"; state.cpuStyle = null;
     hintsShown = {};
-    updateHUD(); chooseFormationUI();
+    setActiveUnits("offense");
+    updateHUD(); choosePersonnelUI();
   }
 
   function nextPlayReady() {
@@ -548,6 +730,17 @@
       d.innerHTML = '<div class="ico">' + o.ico + '</div><div class="t">' + o.t + '</div><div class="d">' + o.d + '</div>';
       d.onclick = o.fn; c.appendChild(d);
     });
+  }
+
+  // 攻撃開始時に編成タイプを選ぶ（隊形選択の前に呼ぶ）
+  function choosePersonnelUI() {
+    state.phase = "formation";
+    setBubble("攻撃だ！まず<b>編成</b>を選ぼう（どんな選手で攻める？）");
+    setCards([
+      { ico: "⚖️", t: "標準（11）",    d: "WR×3・TE・RBのバランス型",  fn: function () { applyPersonnel("balanced"); placeFormation("single"); chooseFormationUI(); } },
+      { ico: "🏃", t: "ラン寄り（21）", d: "WR×2・TE・RB×2の突進型",   fn: function () { applyPersonnel("run");      placeFormation("single"); chooseFormationUI(); } },
+      { ico: "🎯", t: "パス寄り（10）", d: "WR×4・RBのスプレッド型",    fn: function () { applyPersonnel("pass");     placeFormation("single"); chooseFormationUI(); } }
+    ]);
   }
 
   function chooseFormationUI() {
@@ -738,7 +931,7 @@
     offense.forEach(function (off) {
       if (off === carrierNow) return;                    // キャリアは別処理
       var orole = off.userData.role;
-      if (orole === "OL") {
+      if (orole === "OL" || orole === "TE") {
         // 最寄りの守備ライン(DL)に当たって押す。パワー勝ちなら前へ、負けなら後ろへ。
         var d = nearestIn(defense, off.position.x, off.position.z, "DL");
         if (d) {
@@ -883,8 +1076,13 @@
     var sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(20, 50, -10); scene.add(sun);
     scene.add(field());
 
-    BC.OFFENSE.forEach(function (c) { var a = BC.makePlayer(c, BC.TEAM.home); offense.push(a); scene.add(a); });
-    BC.DEFENSE.forEach(function (c) { var b = BC.makePlayer(c, BC.TEAM.away); defense.push(b); scene.add(b); });
+    // 4ユニット(計44体)を生成してすべて scene に追加
+    BC.OFFENSE.forEach(function (c) { var a = BC.makePlayer(c, BC.TEAM.home); homeOff.push(a); scene.add(a); });
+    BC.DEFENSE.forEach(function (c) { var b = BC.makePlayer(c, BC.TEAM.away); awayDef.push(b); scene.add(b); });
+    BC.HOME_DEFENSE.forEach(function (c) { var b = BC.makePlayer(c, BC.TEAM.home); homeDef.push(b); scene.add(b); });
+    BC.AWAY_OFFENSE.forEach(function (c) { var a = BC.makePlayer(c, BC.TEAM.away); awayOff.push(a); scene.add(a); });
+    // 初期は攻撃フェーズ（homeOff/awayDef をオンフィールドに）
+    setActiveUnits("offense");
 
     ball = makeBall(); scene.add(ball);
     ballMarker = makeMarker(); scene.add(ballMarker);
@@ -936,6 +1134,14 @@
   document.getElementById("startBtn").onclick = function () {
     document.getElementById("start").style.display = "none";
     resetGame();
+  };
+
+  // ヘルプ／教材ページの開閉
+  document.getElementById("helpBtn").onclick = function () {
+    document.getElementById("help").style.display = "block";
+  };
+  document.getElementById("helpClose").onclick = function () {
+    document.getElementById("help").style.display = "none";
   };
 
   // テスト用: offense/defense/carrier/anim を window.__BoxelTest に公開

@@ -18,7 +18,7 @@
  *
  * ■ 注意
  *   役割はカードの並び順ではなく role フィールドで決まる。
- *   OFFENSE / DEFENSE はそれぞれ必ず5体にする（並べる位置が5枠のため）。
+ *   OFFENSE / DEFENSE はそれぞれ必ず11体にする。
  *
  * ■ 新しい動物の見た目を足したいとき
  *   makeAnimal() の if (role === "...") 分岐を1つ追加する。
@@ -50,11 +50,13 @@
     RB: { label: "ランニングバック（走る役）" },
     WR: { label: "レシーバー（受け手）" },
     OL: { label: "ラインマン（守る役・押し込む）" },
+    TE: { label: "タイトエンド（ブロックも受けもできる万能型）" },
     P:  { label: "パンター（蹴る役）" },
     DF: { label: "ディフェンス（守備）" },
     DL: { label: "ディフェンスライン（前で押し合う守備）" },
     LB: { label: "ラインバッカー（中盤で走者を追う）" },
-    CB: { label: "コーナーバック（俊足でボールを追う）" }
+    CB: { label: "コーナーバック（俊足でボールを追う）" },
+    S:  { label: "セーフティ（後方で守る最後の砦）" }
   };
 
   // ===== パラメータのプリセット =====  選手の stats に名前で指定して使い回せる
@@ -69,22 +71,68 @@
 
   // ===== 攻撃チーム（味方）の編成 =====  各選手 = name / role / animal+fur / stats
   // role・animal・stats は独立。例: 足が速い・くま・パンター も作れる。
+  // QB×1, OL×5（固定）, フレックス5体（WR/TE/RB。applyPersonnel で再割り当て可能）。
   var OFFENSE = [
     { name: "ミミィ",   role: "QB", animal: "owl",      fur: FUR.owl,      stats: "allround" },
-    { name: "ピョン太", role: "RB", animal: "rabbit",   fur: FUR.rabbit,   stats: "speedy" },
-    { name: "ナッツ",   role: "WR", animal: "squirrel", fur: FUR.squirrel, stats: "hands" },
     { name: "ゴロ",     role: "OL", animal: "bear",     fur: FUR.bear,     stats: "power" },
-    { name: "ガード",   role: "OL", animal: "rhino",    fur: FUR.rhino,    stats: "power" }
+    { name: "ガード",   role: "OL", animal: "rhino",    fur: FUR.rhino,    stats: "power" },
+    { name: "ブロック", role: "OL", animal: "bear",     fur: FUR.bear,     stats: "power" },
+    { name: "ウォール", role: "OL", animal: "rhino",    fur: FUR.rhino,    stats: "power" },
+    { name: "ライン",   role: "OL", animal: "bear",     fur: FUR.bear,     stats: "power" },
+    { name: "ナッツ",   role: "WR", animal: "squirrel", fur: FUR.squirrel, stats: "hands" },
+    { name: "フライ",   role: "WR", animal: "rabbit",   fur: FUR.rabbit,   stats: "speedy" },
+    { name: "スラント", role: "WR", animal: "cat",      fur: FUR.cat,      stats: "hands" },
+    { name: "フック",   role: "TE", animal: "bear",     fur: FUR.bear,     stats: "allround" },
+    { name: "ピョン太", role: "RB", animal: "rabbit",   fur: FUR.rabbit,   stats: "speedy" }
   ];
 
   // ===== 守備チーム（相手）の編成 =====
-  // 役割分担: DL(ライン担当・押し合う) / LB(中盤で追走) / CB(俊足で追走)
+  // 役割分担: DL(ライン担当・押し合う) / LB(中盤で追走) / CB(俊足で追走) / S(後方守備)
   var DEFENSE = [
-    { name: "あいて1", role: "LB", animal: "wolf", fur: FUR.wolf, stats: "allround" },
-    { name: "あいて2", role: "CB", animal: "wolf", fur: FUR.wolf, stats: "speedy" },
-    { name: "あいて3", role: "DL", animal: "wolf", fur: FUR.wolf, stats: "power" },
-    { name: "あいて4", role: "LB", animal: "wolf", fur: FUR.wolf, stats: "allround" },
-    { name: "あいて5", role: "DL", animal: "wolf", fur: FUR.wolf, stats: "power" }
+    { name: "あいてDL1", role: "DL", animal: "wolf", fur: FUR.wolf, stats: "power" },
+    { name: "あいてDL2", role: "DL", animal: "wolf", fur: FUR.wolf, stats: "power" },
+    { name: "あいてDL3", role: "DL", animal: "wolf", fur: FUR.wolf, stats: "power" },
+    { name: "あいてDL4", role: "DL", animal: "wolf", fur: FUR.wolf, stats: "power" },
+    { name: "あいてLB1", role: "LB", animal: "wolf", fur: FUR.wolf, stats: "allround" },
+    { name: "あいてLB2", role: "LB", animal: "wolf", fur: FUR.wolf, stats: "allround" },
+    { name: "あいてLB3", role: "LB", animal: "wolf", fur: FUR.wolf, stats: "allround" },
+    { name: "あいてCB1", role: "CB", animal: "wolf", fur: FUR.wolf, stats: "speedy" },
+    { name: "あいてCB2", role: "CB", animal: "wolf", fur: FUR.wolf, stats: "speedy" },
+    { name: "あいてS1",  role: "S",  animal: "wolf", fur: FUR.wolf, stats: "allround" },
+    { name: "あいてS2",  role: "S",  animal: "wolf", fur: FUR.wolf, stats: "allround" }
+  ];
+
+  // ===== 味方（home）の守備ユニット11体 =====
+  // DL(押し合い担当)×4 / LB(中盤追走)×3 / CB(俊足追走)×2 / S(後方)×2
+  // animal は home らしく非wolf（owl/bear/rhino/rabbit/cat/squirrel）
+  var HOME_DEFENSE = [
+    { name: "守ゴロ1",  role: "DL", animal: "bear",     fur: FUR.bear,     stats: "power" },
+    { name: "守ゴロ2",  role: "DL", animal: "rhino",    fur: FUR.rhino,    stats: "power" },
+    { name: "守ゴロ3",  role: "DL", animal: "bear",     fur: FUR.bear,     stats: "power" },
+    { name: "守ゴロ4",  role: "DL", animal: "rhino",    fur: FUR.rhino,    stats: "power" },
+    { name: "守タック1", role: "LB", animal: "bear",     fur: FUR.bear,     stats: "allround" },
+    { name: "守タック2", role: "LB", animal: "owl",      fur: FUR.owl,      stats: "allround" },
+    { name: "守タック3", role: "LB", animal: "squirrel", fur: FUR.squirrel, stats: "allround" },
+    { name: "守ミミィ2", role: "CB", animal: "rabbit",   fur: FUR.rabbit,   stats: "speedy" },
+    { name: "守フライ2", role: "CB", animal: "cat",      fur: FUR.cat,      stats: "speedy" },
+    { name: "守セーフ1", role: "S",  animal: "owl",      fur: FUR.owl,      stats: "allround" },
+    { name: "守セーフ2", role: "S",  animal: "squirrel", fur: FUR.squirrel, stats: "allround" }
+  ];
+
+  // ===== 相手（away）の攻撃ユニット11体 =====
+  // QB×1, OL×5, WR×3, TE×1, RB×1。all wolf（相手チームカラー）
+  var AWAY_OFFENSE = [
+    { name: "敵QB",   role: "QB", animal: "wolf", fur: FUR.wolf, stats: "allround" },
+    { name: "敵OL1",  role: "OL", animal: "wolf", fur: FUR.wolf, stats: "power" },
+    { name: "敵OL2",  role: "OL", animal: "wolf", fur: FUR.wolf, stats: "power" },
+    { name: "敵OL3",  role: "OL", animal: "wolf", fur: FUR.wolf, stats: "power" },
+    { name: "敵OL4",  role: "OL", animal: "wolf", fur: FUR.wolf, stats: "power" },
+    { name: "敵OL5",  role: "OL", animal: "wolf", fur: FUR.wolf, stats: "power" },
+    { name: "敵WR1",  role: "WR", animal: "wolf", fur: FUR.wolf, stats: "speedy" },
+    { name: "敵WR2",  role: "WR", animal: "wolf", fur: FUR.wolf, stats: "hands" },
+    { name: "敵WR3",  role: "WR", animal: "wolf", fur: FUR.wolf, stats: "speedy" },
+    { name: "敵TE",   role: "TE", animal: "wolf", fur: FUR.wolf, stats: "allround" },
+    { name: "敵RB",   role: "RB", animal: "wolf", fur: FUR.wolf, stats: "speedy" }
   ];
 
   // ===== マネージャー（撮影担当）の設定 =====
@@ -258,7 +306,9 @@
 
   global.BoxelChars = {
     FUR: FUR, TEAM: TEAM, ROLES: ROLES, STAT_PRESETS: STAT_PRESETS,
-    OFFENSE: OFFENSE, DEFENSE: DEFENSE, MANAGER: MANAGER,
+    OFFENSE: OFFENSE, DEFENSE: DEFENSE,
+    HOME_DEFENSE: HOME_DEFENSE, AWAY_OFFENSE: AWAY_OFFENSE,
+    MANAGER: MANAGER,
     box: box, makeAnimal: makeAnimal, makeManager: makeManager,
     makePlayer: makePlayer, resolveStats: resolveStats
   };
