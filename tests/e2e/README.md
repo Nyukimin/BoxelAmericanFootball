@@ -39,11 +39,28 @@ open "/Users/yukimikawaguchi/Documents/BoxelAmericanFootball/index.html?autoplay
 
 各試合は seed で再現できるので、不具合が出たら同じ seed を再現モードに入れて追える。
 
+## 大量試合（統計・低頻度バグ探索）はヘッドレスで
+
+実ブラウザの自動プレーは、タブが裏に回ると `requestAnimationFrame`/タイマーが間引かれ
+（バックグラウンドtab throttling）大量試合だと激遅になる。**大量試合は Node のヘッドレス
+シミュレーション（user_sim）を使う**。ブラウザ不要・throttlingなし・桁違いに高速。
+
+```
+GAMES=200  node tests/e2e/user_sim.mjs    # 200試合（約0.5秒）
+GAMES=1000 node tests/e2e/user_sim.mjs    # 1000試合（約1.4秒）
+```
+各 seed で invariant（例外なし/down・quarter範囲/クロック単調/得点単調・増分妥当/必ず試合終了/
+味方手前・相手奥）を検証。末尾に「完走 x/N・得点あり y/N・NG z」の集計を出す。
+
+使い分け:
+- **実ブラウザ確認（autoplay.py）**: 描画・DOM・実ブラウザ例外の確認。少数（10前後）で十分。
+- **大量試合（user_sim GAMES=...）**: ロジックの統計的検証・低頻度バグ探索。数百〜数千。
+
 ## 単体テスト（純粋ロジック・サンドボックス内で実行可）
 ```
-node tests/run.mjs        # 純粋ロジック単体テスト
+node tests/run.mjs             # 純粋ロジック単体テスト
 node tests/headless/flow.mjs   # THREE/DOMモックで本体フロー統合テスト
-node tests/e2e/user_sim.mjs    # ユーザー視点シミュレーション（seed 1..10 invariant検証）
+node tests/e2e/user_sim.mjs    # ユーザー視点シミュレーション（既定 seed 1..10 invariant検証）
 ```
 
 ## （参考・非推奨）Playwright スクリプト

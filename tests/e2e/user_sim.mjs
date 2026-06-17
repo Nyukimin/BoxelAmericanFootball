@@ -540,15 +540,25 @@ function runGame(seed) {
 
 let allOk = true;
 const summary = [];
-for (let seed = 1; seed <= 10; seed++) {
+// 試合数は環境変数 GAMES で指定可（既定10）。ヘッドレスなので大量試合も高速・throttlingなし。
+const N = Math.max(1, parseInt(process.env.GAMES || "10", 10) || 10);
+const VERBOSE = process.env.VERBOSE === "1" || N <= 20;   // 大量時はNGのみ出力
+let ngCount = 0;
+for (let seed = 1; seed <= N; seed++) {
   let res;
   try { res = runGame(seed); } catch (e) { res = { seed, ok: false, steps: -1, fails: ["runner例外 " + e.message + " " + (e.stack || "").split("\n")[1] ], score: {} }; }
-  if (res.ok === false) allOk = false;
+  if (res.ok === false) { allOk = false; ngCount++; }
   summary.push(res);
-  LOG("seed=" + seed + " " + (res.ok ? "[OK]" : "[NG]") + " steps=" + res.steps + " snaps=" + res.snaps + " ended=" + res.ended + " score=" + (res.score ? (res.score.home + "-" + res.score.away) : "?") + (res.ok ? "" : "  FAILS: " + JSON.stringify(res.fails)));
+  if (VERBOSE || res.ok === false) {
+    LOG("seed=" + seed + " " + (res.ok ? "[OK]" : "[NG]") + " steps=" + res.steps + " snaps=" + res.snaps + " ended=" + res.ended + " score=" + (res.score ? (res.score.home + "-" + res.score.away) : "?") + (res.ok ? "" : "  FAILS: " + JSON.stringify(res.fails)));
+  }
 }
+// 集計サマリ（スコア分布・完走率）
+const ended = summary.filter(function (r) { return r.ended; }).length;
+const scored = summary.filter(function (r) { return r.score && (r.score.home + r.score.away) > 0; }).length;
 LOG("");
-LOG("=== USER-SIM E2E " + (allOk ? "ALL OK (10/10)" : "FAIL") + " ===");
+LOG("集計: 完走 " + ended + "/" + N + " / 得点あり " + scored + "/" + N + " / NG " + ngCount);
+LOG("=== USER-SIM E2E " + (allOk ? ("ALL OK (" + N + "/" + N + ")") : ("FAIL (NG " + ngCount + "/" + N + ")")) + " ===");
 if (allOk === false) {
   const ng = summary.find(function (r) { return r.ok === false; });
   LOG("最初のNG seed=" + ng.seed + " のsysLog末尾:");
