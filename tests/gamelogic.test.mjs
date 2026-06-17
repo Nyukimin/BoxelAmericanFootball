@@ -155,6 +155,24 @@ var shortNeutral = shortRate(null, N);
 assert("読み合い: coverage未指定の成功率は ◎ と △ の間", shortNeutral < shortVsBlitz && shortNeutral > shortVsMan);
 
 // ------------------------------------------------------------
+// 8. 守備能力（dPower/dSpeed）が結果に効く
+// ------------------------------------------------------------
+var runVsWeakD   = avgYards("single", "run", { rbSpeed: 6, olPower: 6, dPower: 3 }, N);
+var runVsStrongD = avgYards("single", "run", { rbSpeed: 6, olPower: 6, dPower: 9 }, N);
+assert("守備: 強い守備ライン(dPower=9)はラン平均ヤードを減らす", runVsStrongD < runVsWeakD);
+
+function shortRateD(dSpeed, n) {
+  var ok = 0;
+  for (var i = 0; i < n; i++) { if (BG.outcome("single", "short", { wrCatch: 6, dSpeed: dSpeed }).complete) ok++; }
+  return ok / n;
+}
+assert("守備: 速いカバー(dSpeed=9)はショート成功率を下げる", shortRateD(9, N) < shortRateD(3, N));
+
+// 後方互換: dPower/dSpeed 未指定は中立（既存テストと同等）
+var runNeutralD = avgYards("single", "run", { rbSpeed: 6, olPower: 6 }, N);
+assert("守備: 未指定は弱守備と強守備の間（中立）", runNeutralD < runVsWeakD && runNeutralD > runVsStrongD);
+
+// ------------------------------------------------------------
 // 終了
 // ------------------------------------------------------------
 console.log("");

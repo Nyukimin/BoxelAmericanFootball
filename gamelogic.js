@@ -6,6 +6,10 @@
 (function () {
   "use strict";
 
+  // 乱数源（差し替え可能）。既定は global Math.random を毎回参照する（テストの上書きに追従）。
+  var _rng = function () { return Math.random(); };
+  function setRng(fn) { _rng = (typeof fn === "function") ? fn : function () { return Math.random(); }; }
+
   /**
    * プレー結果を計算する。
    * @param {string} formation "shotgun"|"i"|"single"|"goal"
@@ -26,8 +30,12 @@
     var tapedRole = (ctx && ctx.tapedRole) ? ctx.tapedRole : null;
     var coverage  = (ctx && ctx.coverage) ? ctx.coverage : null;
     var edge      = coverageMatchup(play, coverage).edge;   // -1/0/1（守備の読み合い）
+    // 守る側の能力（未指定は6=中立で無影響）。dpwr=守備ラインの強さ, dspd=カバーの速さ
+    var dPower = (ctx && ctx.dPower != null) ? ctx.dPower : 6;
+    var dSpeed = (ctx && ctx.dSpeed != null) ? ctx.dSpeed : 6;
+    var dpwr = dPower / 6, dspd = dSpeed / 6;
 
-    var r = Math.random(), y = 0, complete = true, turnover = false, msg = "", reason = "";
+    var r = _rng(), y = 0, complete = true, turnover = false, msg = "", reason = "";
     var runHurt  = tapedRole === "RB" || tapedRole === "OL";
     var passHurt = tapedRole === "QB" || tapedRole === "WR";
 
@@ -37,22 +45,24 @@
     var cat   = wrCatch  / 6;
     var wrSpd = wrSpeed  / 6;
 
-    function rand(a, b) { return a + Math.random() * (b - a); }
+    function rand(a, b) { return a + _rng() * (b - a); }
 
     if (play === "run") {
       y = rand(1, 5) * (0.7 + 0.3 * pwr);
       if (formation === "i" || formation === "goal") y += rand(1.5, 4) * pwr;
       if (r > (1 - 0.10 * spd)) y += rand(8, 22) * spd;   // 速いほどブレイク
-      if (Math.random() < 0.12 / pwr) y -= rand(2, 5);     // 弱いと止められる
+      if (_rng() < 0.12 / pwr) y -= rand(2, 5);     // 弱いと止められる
       if (runHurt) y *= 0.55;
       y *= (1 + 0.5 * edge);                                // 読み合い: 相性◎で+50%/△で-50%
-      // タックル・フォー・ロス（約8%）。高乱数側で判定し Math.random()=0 固定のテストでは発生しない。
-      if (Math.random() > 0.92) { y = -(1 + Math.round(rand(0, 4))); msg = "止められて後退…！"; reason = "loss"; }
+      y *= Math.max(0.5, Math.min(1.4, 1 - 0.30 * (dpwr - 1)));   // 守備ラインが強いほどランが止まる
+      // タックル・フォー・ロス（約8%）。高乱数側で判定し _rng()=0 固定のテストでは発生しない。
+      if (_rng() > 0.92) { y = -(1 + Math.round(rand(0, 4))); msg = "止められて後退…！"; reason = "loss"; }
       else { msg = "ランで前進！"; reason = "run"; }
     } else if (play === "short") {
       var dropS = 0.16 / cat;                               // 捕球低いほど落球
       var failT = (passHurt ? 0.30 : 0.10) + dropS;
       failT = Math.max(0.02, Math.min(0.95, failT - 0.18 * edge)); // 読み合い: ◎で成功しやすく
+      failT = Math.max(0.02, Math.min(0.95, failT + 0.12 * (dspd - 1))); // 守備が速いほど失敗↑
       if (r < failT) {
         complete = false; y = 0;
         msg = (r < dropS ? "あっ、落球…！" : "パス失敗…ドンマイ！");
@@ -62,6 +72,7 @@
         if (formation === "shotgun" || formation === "single") y += rand(1, 3);
         if (passHurt) y *= 0.7;
         y *= (1 + 0.4 * edge);
+        y *= Math.max(0.6, Math.min(1.3, 1 - 0.20 * (dspd - 1)));   // 守備が速いほどYAC↓
         msg = "ショートパス成功！"; reason = "catch";
       }
     } else {
@@ -69,8 +80,10 @@
       var dropL = 0.14 / cat;
       var intT  = passHurt ? 0.16 : 0.1;
       if (edge < 0) intT += 0.04;                           // 相性△（ロング対ゾーン）は奪われやすい
+      intT = Math.max(0, intT + 0.05 * (dspd - 1));         // 守備が速いとインターセプト↑
       var missT = (passHurt ? 0.55 : 0.42) + dropL;
       missT = Math.max(0.05, Math.min(0.97, missT - 0.20 * edge)); // 読み合い: ◎で通りやすく
+      missT = Math.max(0.05, Math.min(0.97, missT + 0.15 * (dspd - 1))); // 守備が速いほど届きにくい
       if (r < intT) {
         turnover = true; y = 0; msg = "インターセプト！相手ボールに…"; reason = "intercept";
       } else if (r < missT) {
@@ -82,6 +95,7 @@
         if (formation === "shotgun") y += rand(2, 6);
         if (passHurt) y *= 0.7;
         y *= (1 + 0.4 * edge);
+        y *= Math.max(0.6, Math.min(1.3, 1 - 0.20 * (dspd - 1)));   // 守備が速いほど獲得↓
         msg = "ロングパス成功！大きく前進！"; reason = "catch";
       }
     }
@@ -101,7 +115,7 @@
   function opponentDrive(los, pinBonus) {
     var GOAL_NEAR = 10;
     var goodness = Math.max(0, Math.min(1, 1 - (los - GOAL_NEAR) / 100 - (pinBonus || 0)));
-    var r = Math.random();
+    var r = _rng();
     var tdC = 0.12 + 0.30 * goodness;
     var fgC = tdC + 0.18 + 0.15 * goodness;
     if (r < tdC) return { points: 7, msg: "相手にタッチダウンされた…！" };
@@ -216,8 +230,8 @@
     var baseRate            = (opts && opts.baseRate            != null) ? opts.baseRate            : 0.045;
     var opponentRecoverRate = (opts && opts.opponentRecoverRate != null) ? opts.opponentRecoverRate : 0.5;
 
-    var fumble = Math.random() < fumbleProbability(power, baseRate);
-    var lostToOpponent = fumble && (Math.random() < opponentRecoverRate);
+    var fumble = _rng() < fumbleProbability(power, baseRate);
+    var lostToOpponent = fumble && (_rng() < opponentRecoverRate);
     return { fumble: fumble, lostToOpponent: lostToOpponent };
   }
 
@@ -226,7 +240,7 @@
    * @returns {"run"|"pass"|"balanced"}
    */
   function pickCpuStyle() {
-    var r = Math.random();
+    var r = _rng();
     if (r < 0.38) return "run";
     if (r < 0.76) return "pass";
     return "balanced";
@@ -261,7 +275,7 @@
     if (toGo >= 8) wZone  += 1.0;   // 長い残りは大きいのを警戒
     if (down >= 3) wMan   += 0.6;   // 勝負どころは張り付き
     var total = wBlitz + wMan + wZone;
-    var r = Math.random() * total;
+    var r = _rng() * total;
     if (r < wBlitz) return "blitz";
     if (r < wBlitz + wMan) return "man";
     return "zone";
@@ -283,7 +297,7 @@
     if (toGo >= 8) { wLong += 0.8; wShort += 0.4; } // 長い残りはパス寄り
     if (down >= 3 && toGo >= 6) wLong += 0.6;  // 勝負どころの長い残りはロング
     var total = wRun + wShort + wLong;
-    var r = Math.random() * total;
+    var r = _rng() * total;
     if (r < wRun) return "run";
     if (r < wRun + wShort) return "short";
     return "long";
@@ -338,7 +352,7 @@
 
     if (tactic === "blitz") {
       var toChance = 0.14 + 0.10 * (dPower / 6);
-      if (Math.random() < toChance) {
+      if (_rng() < toChance) {
         return { points: 0, turnoverWon: true, msg: "ブリッツ的中！ ボールを奪った！" };
       }
       goodness = clamp(goodness + 0.10);
@@ -346,7 +360,7 @@
 
     var tdC = (0.12 + 0.30 * goodness) * (tactic === "zone" ? 0.7 : 1);
     var fgC = tdC + 0.18 + 0.15 * goodness;
-    var r = Math.random();
+    var r = _rng();
     if (r < tdC) return { points: 7, turnoverWon: false, msg: "相手にタッチダウンを許した…" };
     if (r < fgC) return { points: 3, turnoverWon: false, msg: "相手にフィールドゴールを許した。" };
     return { points: 0, turnoverWon: false, msg: "守備陣がストップ！ ナイスディフェンス！" };
@@ -407,12 +421,12 @@
 
   /**
    * キックオフ結果を返す（純粋関数）。
-   * @param {object} opts opts.random {number} [0,1) - 省略時 Math.random()
+   * @param {object} opts opts.random {number} [0,1) - 省略時 _rng()
    * @returns {{ yards: number, kind: "touchback"|"return"|"bigReturn"|"fairCatch" }}
    *   yards: 受球側が何ヤードラインからスタートするか（自陣基準、10〜50目安）
    */
   function kickoffResult(opts) {
-    var r = (opts && opts.random != null) ? opts.random : Math.random();
+    var r = (opts && opts.random != null) ? opts.random : _rng();
     if (r < 0.55) return { yards: 25, kind: "touchback" };
     if (r < 0.80) return { yards: 25, kind: "fairCatch" };
     if (r < 0.93) return { yards: Math.round(20 + (r - 0.80) / 0.13 * 15), kind: "return" };
@@ -421,35 +435,35 @@
 
   /**
    * オンサイドキックのリカバー成否（純粋関数）。
-   * @param {object} opts opts.random {number} [0,1) - 省略時 Math.random()
+   * @param {object} opts opts.random {number} [0,1) - 省略時 _rng()
    * @returns {boolean} true=自チームリカバー成功（約15%）
    */
   function onsideRecovered(opts) {
-    var r = (opts && opts.random != null) ? opts.random : Math.random();
+    var r = (opts && opts.random != null) ? opts.random : _rng();
     return r < 0.15;
   }
 
   /**
    * パントリターンのヤードを返す（純粋関数）。
-   * @param {object} opts opts.random {number} [0,1) - 省略時 Math.random()
+   * @param {object} opts opts.random {number} [0,1) - 省略時 _rng()
    * @returns {{ yards: number, kind: "fairCatch"|"return" }}
    *   yards: リターンヤード（フェアキャッチなら0）
    */
   function puntReturn(opts) {
-    var r = (opts && opts.random != null) ? opts.random : Math.random();
+    var r = (opts && opts.random != null) ? opts.random : _rng();
     if (r < 0.35) return { yards: 0, kind: "fairCatch" };
     return { yards: Math.round(2 + (r - 0.35) / 0.65 * 12), kind: "return" };
   }
 
   /**
    * スナップ前の反則を返す（純粋関数・高乱数側で発火）。約6%。
-   * @param {object} opts opts.random/opts.random2 [0,1) 省略時 Math.random()
+   * @param {object} opts opts.random/opts.random2 [0,1) 省略時 _rng()
    * @returns {null | { team:"off"|"def", yards:number, label:string, type:string }}
    */
   function rollPrePenalty(opts) {
-    var r = (opts && opts.random != null) ? opts.random : Math.random();
+    var r = (opts && opts.random != null) ? opts.random : _rng();
     if (r < 0.94) return null;
-    var r2 = (opts && opts.random2 != null) ? opts.random2 : Math.random();
+    var r2 = (opts && opts.random2 != null) ? opts.random2 : _rng();
     if (r2 < 0.5) return { team: "off", yards: 5, label: "フォルススタート", type: "falseStart" };
     if (r2 < 0.8) return { team: "def", yards: 5, label: "オフサイド", type: "offside" };
     return { team: "off", yards: 5, label: "ディレイオブゲーム", type: "delay" };
@@ -460,9 +474,9 @@
    * @returns {null | { team:"off"|"def", yards:number, autoFirst:boolean, label:string, type:string }}
    */
   function rollPlayPenalty(opts) {
-    var r = (opts && opts.random != null) ? opts.random : Math.random();
+    var r = (opts && opts.random != null) ? opts.random : _rng();
     if (r < 0.90) return null;
-    var r2 = (opts && opts.random2 != null) ? opts.random2 : Math.random();
+    var r2 = (opts && opts.random2 != null) ? opts.random2 : _rng();
     if (r2 < 0.30) return { team: "off", yards: 10, autoFirst: false, label: "ホールディング", type: "offHold" };
     if (r2 < 0.50) return { team: "def", yards: 5,  autoFirst: true,  label: "ホールディング", type: "defHold" };
     if (r2 < 0.70) return { team: "def", yards: 15, autoFirst: true,  label: "パスインターフェア", type: "defPI" };
@@ -473,12 +487,12 @@
   /**
    * パスプレー固有の反則を返す（純粋関数・高乱数側で発火）。約8%。
    * パス（short/long）のときのみ呼ぶこと。ラン/キックでは呼ばない。
-   * テストは Math.random()=0 固定のため r > 0.92 でのみ発火し誤発火しない。
+   * テストは _rng()=0 固定のため r > 0.92 でのみ発火し誤発火しない。
    * @param {object} opts
    *   opts.play    {string} "short"|"long"（パス種別）
    *   opts.complete{boolean} パスが成功したか（成功時は grounding を出さない）
-   *   opts.random  {number} [0,1) 省略時 Math.random()（発火判定）
-   *   opts.random2 {number} [0,1) 省略時 Math.random()（種類判定）
+   *   opts.random  {number} [0,1) 省略時 _rng()（発火判定）
+   *   opts.random2 {number} [0,1) 省略時 _rng()（種類判定）
    * @returns {null | { type:string, yards:number, lossOfDown:boolean, label:string }}
    *   yards: 罰退ヤード（攻撃の損失・正値）。lossOfDown: ダウン消費を伴うか。
    */
@@ -486,9 +500,9 @@
     var play     = (opts && opts.play) ? opts.play : "short";
     var complete = !!(opts && opts.complete);
     if (play !== "short" && play !== "long") return null;
-    var r = (opts && opts.random != null) ? opts.random : Math.random();
+    var r = (opts && opts.random != null) ? opts.random : _rng();
     if (r < 0.92) return null;
-    var r2 = (opts && opts.random2 != null) ? opts.random2 : Math.random();
+    var r2 = (opts && opts.random2 != null) ? opts.random2 : _rng();
     // インテンショナルグラウンディングはパス不成功時のみ（QBが投げ捨てた扱い）
     if (r2 < 0.34 && !complete) {
       return { type: "grounding", yards: 8, lossOfDown: true, label: "インテンショナルグラウンディング" };
@@ -502,14 +516,14 @@
   /**
    * ターンオーバー（INT/ファンブル喪失）後の相手リターンを返す（純粋関数・乱数使用）。
    * @param {object} opts
-   *   opts.random  {number} [0,1) 省略時 Math.random()（リターン量）
-   *   opts.random2 {number} [0,1) 省略時 Math.random()（TD判定・高乱数側）
+   *   opts.random  {number} [0,1) 省略時 _rng()（リターン量）
+   *   opts.random2 {number} [0,1) 省略時 _rng()（TD判定・高乱数側）
    * @returns {{ yards: number, td: boolean }}
    *   yards: 奪った側が戻すヤード（0〜30目安）。td: リターンTD（低確率・高乱数側）。
    */
   function turnoverReturn(opts) {
-    var r  = (opts && opts.random  != null) ? opts.random  : Math.random();
-    var r2 = (opts && opts.random2 != null) ? opts.random2 : Math.random();
+    var r  = (opts && opts.random  != null) ? opts.random  : _rng();
+    var r2 = (opts && opts.random2 != null) ? opts.random2 : _rng();
     var td = r2 > 0.94;                       // リターンTDは約6%（高乱数側で発火）
     if (td) return { yards: Math.round(30 + r * 40), td: true };
     var yards = Math.round(r * 22);           // 0〜22ヤード
@@ -528,6 +542,7 @@
   }
 
   window.BoxelGame = {
+    setRng: setRng,
     outcome: outcome,
     rollPrePenalty: rollPrePenalty,
     rollPlayPenalty: rollPlayPenalty,

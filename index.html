@@ -39,7 +39,16 @@
   #personnelBtn { display: none; margin-top: 8px; text-align: center; font-size: 13px; font-weight: 700; color: #234; background: #dfeefc; border: 2px solid #8fbce6; border-radius: 10px; padding: 8px; cursor: pointer; }
   @keyframes tapPulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
   #helpWrap { top: 52px; right: 14px; pointer-events: auto; }
-  #helpBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  #helpBtn, #logBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  #logBtn { margin-left: 6px; }
+  #playLog { position: absolute; top: 92px; right: 14px; z-index: 18; display: none; pointer-events: auto; background: rgba(20,30,16,.94); color: #d9f0c8; border-radius: 10px; padding: 10px 12px; width: min(380px, 92vw); max-height: 60vh; overflow-y: auto; font-size: 11px; line-height: 1.5; font-family: ui-monospace, monospace; }
+  #playLog .lg-head { display: flex; justify-content: space-between; align-items: center; color: #fff; font-weight: 700; margin-bottom: 6px; font-family: inherit; }
+  #playLog .lg-close { background: #ee8e3c; color: #fff; border: none; border-radius: 8px; padding: 4px 10px; font-size: 11px; cursor: pointer; font-family: inherit; }
+  #playLog .lg-row { border-bottom: 1px solid rgba(255,255,255,.08); padding: 2px 0; }
+  #playLog .lg-dbg { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: rgba(255,255,255,.06); border-radius: 8px; padding: 6px; margin-bottom: 6px; color: #ffd9a0; }
+  #playLog .lg-btn { background: #3a5a2a; color: #fff; border: 1px solid rgba(255,255,255,.25); border-radius: 7px; padding: 4px 8px; font-size: 10px; cursor: pointer; font-family: inherit; }
+  #playLog .lg-area { width: 100%; height: 120px; margin: 6px 0; font-size: 10px; font-family: ui-monospace, monospace; background: #0c1209; color: #b8e0a0; border: 1px solid rgba(255,255,255,.15); border-radius: 6px; }
+  #playLog .lg-sub { color: #fff; font-weight: 700; margin: 6px 0 4px; }
   #timeoutWrap { top: 92px; right: 14px; pointer-events: auto; }
   #timeoutBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
   #timeoutBtn:disabled { opacity: .45; cursor: default; }
@@ -81,7 +90,8 @@
   <button data-v="top">真上</button>
   <button data-v="player">選手視点</button>
 </div>
-<div class="hud" id="helpWrap"><button id="helpBtn">？ ヘルプ</button></div>
+<div class="hud" id="helpWrap"><button id="helpBtn">？ ヘルプ</button><button id="logBtn">ログ</button></div>
+<div id="playLog"></div>
 <div class="hud" id="timeoutWrap"><button id="timeoutBtn">タイムアウト 3</button></div>
 <div id="playerInfo"></div>
 
@@ -189,7 +199,7 @@
   var camPos = new THREE.Vector3(), camTarget = new THREE.Vector3();
 
   function lerp(a, b, t) { return a + (b - a) * t; }
-  function rand(a, b) { return a + Math.random() * (b - a); }
+  function rand(a, b) { return a + gameRng() * (b - a); }
   function byRole(r) { for (var i = 0; i < offense.length; i++) { if (offense[i].userData.role === r) return offense[i]; } return null; }
 
   // 攻守モードに応じてオンフィールドユニットを切り替え、非表示ユニットを隠す
@@ -226,6 +236,7 @@
   function restoreUnits() { setActiveUnits(prevUnitMode); }
   // フレックス5体（QB・OL 以外）の role を編成タイプで再割り当て（stats/animal/name は不変）
   function applyPersonnel(type) {
+    logInput("personnel", type);
     state.personnel = type;
     var roles = (type === "run")  ? ["WR","WR","TE","RB","RB"] :
                 (type === "pass") ? ["WR","WR","WR","WR","RB"] :
@@ -241,7 +252,8 @@
   }
   function statOf(p, key) { return (p && p.userData && p.userData.stats && p.userData.stats[key]) || 6; }
   function teamStat(list, role, key) { var s = 0, n = 0; list.forEach(function (p) { if (p.userData.role === role) { s += statOf(p, key); n++; } }); return n ? s / n : 6; }
-  function defenseStat(key) { var s = 0; defense.forEach(function (p) { s += statOf(p, key); }); return defense.length ? s / defense.length : 6; }
+  function avgStat(list, key) { var s = 0; list.forEach(function (p) { s += statOf(p, key); }); return list.length ? s / list.length : 6; }
+  function defenseStat(key) { return avgStat(defense, key); }
   function bestKicker() { var b = offense[0], bv = -1; offense.forEach(function (p) { var k = statOf(p, "kick"); if (k > bv) { bv = k; b = p; } }); return b; }
   // list の中で (x,z) に最も近い選手を返す（role 指定があればその役割に限定）
   function nearestIn(list, x, z, role) {
@@ -453,7 +465,9 @@
       wrCatch:  statOf(wr, "catch"),
       wrSpeed:  statOf(wr, "speed"),
       tapedRole: state.taped ? state.taped.role : null,
-      coverage: state.defCoverage || null
+      coverage: state.defCoverage || null,
+      dPower: defenseStat("power"),   // 相手守備ラインの強さ
+      dSpeed: defenseStat("speed")    // 相手カバーの速さ
     };
     return window.BoxelGame.outcome(formation, play, ctx);
   }
@@ -461,6 +475,7 @@
   // スナップ前の反則を適用してダウンをやり直す（プレーは行わない）。
   function applyPrePenalty(pre) {
     setCards([]);
+    logPlay("スナップ前反則 " + (pre.team === "off" ? "攻撃" : "守備") + pre.label + " " + pre.yards + "yd");
     if (pre.team === "off") {
       state.los = Math.max(GOAL_NEAR + 1, state.los - pre.yards);
       state.toGo += pre.yards;
@@ -477,11 +492,13 @@
 
   function startPlay(play) {
     state.play = play;
+    logInput("playCall", play);
     // 前方パスは1ダウン1回。新しいダウンの最初に既使用フラグをリセットし、パスで使用を記録。
     state.fwdPassUsed = (play === "short" || play === "long");
     var pre = window.BoxelGame.rollPrePenalty({});
     if (pre) { applyPrePenalty(pre); return; }   // スナップ前反則ならプレーせずやり直し
     var o = outcome(state.formation, play);
+    logPlay("攻撃スナップ " + state.formation + "/" + playName(play) + " → " + o.msg.replace(/<[^>]+>/g, "") + " (yards=" + o.yards + ")");
     var startZ = state.los;
     var endZ = Math.min(state.los + o.yards, GOAL_FAR);
     o.endZ = endZ;
@@ -546,7 +563,8 @@
   // grounding/illegalForward は loss-of-down（ダウン消費）、ineligible はダウンやり直し。
   function applyPassFoul(pf) {
     state.los = Math.max(GOAL_NEAR + 1, state.los - pf.yards);
-    state.toGo += pf.yards;
+    state.toGo += pf.yards; state.hashX = 0;   // 罰退スポットは中央
+    logPlay("パス反則 " + pf.label + " 罰退" + pf.yards + " lossOfDown=" + !!pf.lossOfDown + " 新los=" + state.los);
     var head = "ホイッスル先生：反則【攻撃の<b>" + pf.label + "</b>】 " + pf.yards + "ヤード罰退";
     if (pf.lossOfDown) {
       state.down += 1;
@@ -568,7 +586,7 @@
     var tr = window.BoxelGame.turnoverReturn({});
     if (tr.td) {
       state.away += 6;
-      var pat = Math.random() < 0.94;
+      var pat = gameRng() < 0.94;
       if (pat) state.away += 1;
       flashScore(); updateHUD();
       setBubble("ホイッスル先生：" + reason + "、そのまま走られて<b>リターンタッチダウン…！</b>" +
@@ -584,7 +602,8 @@
     }
     // リターン分だけ相手の開始位置を前進させる（自陣 -z 方向＝相手が前進）。
     var retMsg = tr.yards > 0 ? (" " + tr.yards + "ヤードのリターン。") : "";
-    state.los = Math.max(GOAL_NEAR + 1, Math.round(ball.position.z) - tr.yards);
+    state.los = Math.max(GOAL_NEAR + 1, Math.round(ball.position.z) - tr.yards); state.hashX = 0;
+    logPlay("ターンオーバー return=" + tr.yards + " 新los=" + state.los);
     setBubble("ホイッスル先生：" + reason + "ので<b>攻守交代</b>。" + retMsg + " 今度はキミが守備、取り返そう！");
     endPossession(0);
   }
@@ -592,12 +611,13 @@
   function finalize(o) {
     recoverTape();
     // アウトオブバウンズ判定（成功プレーのみ・低確率）。クロック停止になり消費小。
-    // テストは Math.random()=0 固定のため高乱数側で発火させ誤発火を防ぐ。
+    // テストは gameRng()=0 固定のため高乱数側で発火させ誤発火を防ぐ。
     var oob = false;
-    if (o.complete && (o.reason === "run" || o.reason === "catch") && Math.random() > 0.92) {
+    if (o.complete && (o.reason === "run" || o.reason === "catch") && gameRng() > 0.92) {
       oob = true;
     }
-    updateHashFromCarrier(oob);
+    // ハッシュ（横位置）の更新は「プレーが成立して通常前進する」場合だけ行う。
+    // 反則やターンオーバーで再開する場合は走者の横位置を引き継がない（中央＝enforcement spot）。
     // クロック消費: 成功（インバウンズ）は40秒で継続、それ以外（不成功/ターンオーバー/
     // アウトオブバウンズ/得点/タイムアウト）はクロック停止扱いで消費小。
     var costKind;
@@ -626,6 +646,7 @@
     }
     // 不成功パス（落球/届かず）は前進なし・ライン不変。ダウンだけ消費する。
     if (!o.complete) {
+      logPlay("不成功パス (" + o.reason + ") 前進なし");
       state.down += 1;
       if (state.down > 4) {
         setBubble("ホイッスル先生：" + o.msg + " 前進できず、<b>4回で10ヤードに届かず攻守交代</b>。今度はキミが守備だよ。");
@@ -637,17 +658,18 @@
       nextPlayReady(); return;
     }
     if (ball.position.z >= GOAL_FAR - 0.5) {
+      logPlay("タッチダウン！ home 6点");
       state.home += 6;             // タッチダウンは6点。追加点は PAT / 2ポイントで選ぶ
       flashScore();
       hint("td", "ホイッスル先生：<b>タッチダウン！ 6点</b>！ 追加点をねらおう。");
       afterTouchdown(); return;
     }
     // ファンブル判定（ボールを保持して走った/捕ったプレーのみ）。
-    // テストは Math.random()=0 固定のため、高乱数側で発生させ誤発火を防ぐ（確率は同じ）。
+    // テストは gameRng()=0 固定のため、高乱数側で発生させ誤発火を防ぐ（確率は同じ）。
     if (o.complete && carrier) {
       var fprob = window.BoxelGame.fumbleProbability(statOf(carrier, "power"));
-      if (Math.random() > 1 - fprob) {
-        if (Math.random() > 0.5) {   // 相手がリカバー → 奪った側がリターン
+      if (gameRng() > 1 - fprob) {
+        if (gameRng() > 0.5) {   // 相手がリカバー → 奪った側がリターン
           state.los = Math.round(ball.position.z);
           resolveTurnover("<b>ファンブル！</b> こぼれたボールを相手に確保された…");
           return;
@@ -659,10 +681,13 @@
     var prevLos = state.los, playEndLos = Math.round(ball.position.z);
     var pen = window.BoxelGame.rollPlayPenalty({});
     if (pen) {
-      if (pen.team === "def") {                 // 守備の反則＝攻撃有利。良ければ受諾
+      if (pen.team === "def") {                 // 守備の反則＝攻撃有利。攻撃にとって良い方を選ぶ
         var penLos = Math.min(GOAL_FAR - 1, prevLos + pen.yards);
-        if (pen.autoFirst || penLos > playEndLos) {
-          state.los = penLos;
+        var playGotFirst = (playEndLos - prevLos) >= state.toGo;   // プレーで既にファーストダウンか
+        var accept = (penLos > playEndLos) || (pen.autoFirst && !playGotFirst);
+        logPlay("守備反則 " + pen.label + " prevLos=" + prevLos + " 着地=" + playEndLos + " penLos=" + penLos + " 自動FD=" + pen.autoFirst + " 判定=" + (accept ? "受諾" : "辞退"));
+        if (accept) {
+          state.los = penLos; state.hashX = 0;   // 罰退スポットは中央（走者の横位置を引き継がない）
           if (pen.autoFirst) { state.down = 1; state.toGo = 10; }
           else { state.toGo -= (penLos - prevLos); if (state.toGo <= 0) { state.down = 1; state.toGo = 10; } }
           setBubble("ホイッスル先生：反則【守備の<b>" + pen.label + "</b>】受諾！ " + (pen.autoFirst ? "<b>自動ファーストダウン</b>＋" : "") + pen.yards + "ヤード前進。");
@@ -671,14 +696,16 @@
         // 辞退 → プレー結果を採用（下へ続行）
       } else {                                  // 攻撃の反則＝守備有利。前進プレーなら帳消しに受諾
         if (playEndLos - prevLos >= 0) {
-          state.los = Math.max(GOAL_NEAR + 1, prevLos - pen.yards);
+          state.los = Math.max(GOAL_NEAR + 1, prevLos - pen.yards); state.hashX = 0;
           state.toGo += pen.yards;
+          logPlay("攻撃反則 " + pen.label + " 受諾 罰退" + pen.yards + " 新los=" + state.los);
           setBubble("ホイッスル先生：反則【攻撃の<b>" + pen.label + "</b>】 守備が受諾。" + pen.yards + "ヤード罰退、ダウンやり直し。");
           updateHUD(); nextPlayReady(); return;
         }
         // 辞退 → プレー結果を採用
       }
     }
+    updateHashFromCarrier(oob);                 // 通常前進が確定した時だけハッシュを走者位置で更新
     state.los = Math.round(ball.position.z);
     // セーフティ: 自陣エンドゾーン内/後方で止められた → 相手に2点、フリーキックで攻守交代
     if (state.los <= GOAL_NEAR) {
@@ -702,6 +729,7 @@
   // 前進確定後のダウン処理（ファーストダウン/ダウン更新/ターンオーバー・オン・ダウンズ）。
   // measured=true は計測演出を経た僅差ケース（届いた/わずかに届かずの言い回しにする）。
   function concludeAdvance(note, measured) {
+    logPlay("前進確定 los=" + state.los + " down=" + state.down + " toGo=" + state.toGo + (measured ? " (計測)" : ""));
     if (state.toGo <= 0) {
       state.down = 1; state.toGo = 10;
       var reach = measured ? "（計測の結果、<b>届いた！</b>）" : "";
@@ -730,13 +758,14 @@
     ]);
   }
   function resolveTry(kind) {
+    logInput("try", kind);
     setCards([]);
     state.phase = "animating";
     if (kind === "pat") {
-      if (Math.random() < 0.94) { state.home += 1; setBubble("ホイッスル先生：<b>PAT成功！</b> 計7点。"); }
+      if (gameRng() < 0.94) { state.home += 1; setBubble("ホイッスル先生：<b>PAT成功！</b> 計7点。"); }
       else setBubble("ホイッスル先生：<b>PAT失敗…</b> 6点のまま。切り替えよう。");
     } else {
-      if (Math.random() < 0.47) { state.home += 2; setBubble("ホイッスル先生：<b>2ポイント成功！</b> 計8点！ ナイス勝負。"); }
+      if (gameRng() < 0.47) { state.home += 2; setBubble("ホイッスル先生：<b>2ポイント成功！</b> 計8点！ ナイス勝負。"); }
       else setBubble("ホイッスル先生：<b>2ポイント失敗…</b> 6点のまま。ドンマイ。");
     }
     flashScore(); updateHUD();
@@ -787,6 +816,7 @@
 
   // 2段目：守り方（カバレッジ）。攻撃の「プレー」と対称。
   function oppPickFront(front) {
+    logInput("defFront", front);
     state.defFront = front;
     setBubble("ホイッスル先生：次に<b>守り方（作戦）</b>を選ぼう！");
     setCards([
@@ -797,15 +827,19 @@
   }
 
   function oppPickCoverage(coverage) {
+    logInput("defCov", coverage);
     setCards([]);
     state.phase = "animating";
     var cpuPlay = window.BoxelGame.pickCpuPlay({ down: state.oppDown, toGo: state.oppToGo, cpuStyle: state.cpuStyle });
     var ctx = {
       rbSpeed: defenseStat("speed"), olPower: defenseStat("power"),
       wrCatch: defenseStat("catch"), wrSpeed: defenseStat("speed"),
-      coverage: coverage, tapedRole: null
+      coverage: coverage, tapedRole: null,
+      dPower: avgStat(offense, "power"),   // 味方守備(homeDef)の強さ
+      dSpeed: avgStat(offense, "speed")    // 味方守備の速さ
     };
     var r = window.BoxelGame.outcome("single", cpuPlay, ctx);   // カバレッジ(三角)で1プレーを解決
+    logPlay("相手スナップ " + playName(cpuPlay) + "(守備=" + coverage + ") → " + r.msg.replace(/<[^>]+>/g, "") + " (yards=" + r.yards + ")");
     // 相手プレーでもクロックを消費する（ランは40秒、パス不成功/ターンオーバーは6秒）
     var oppCostKind;
     if (r.turnover) { oppCostKind = "turnover"; }
@@ -836,7 +870,7 @@
     }
     if (td) {
       state.away += 6;                                  // 相手TDは6点
-      var pat = Math.random() < 0.94;                   // CPUは基本PAT
+      var pat = gameRng() < 0.94;                   // CPUは基本PAT
       if (pat) state.away += 1;
       flashScore();
       setBubble("ホイッスル先生：相手の" + pn + "が決まって<b>タッチダウン…</b>" + (pat ? "（PATも成功で計7点）" : "（PATは失敗で6点）") + " 切り替えていこう！");
@@ -1028,6 +1062,7 @@
                   (kr.kind === "bigReturn") ? "ビッグリターン！ 自陣" + kr.yards + "ヤードから！" :
                   "リターン。自陣" + kr.yards + "ヤードから。";
     setBubble("ホイッスル先生：キックオフ！ " + kindMsg);
+    logPlay("キックオフ 受球=" + (receivingIsHome ? "味方" : "相手") + " " + kr.kind + " 自陣" + kr.yards);
     var losForReceiver = receivingIsHome
       ? (GOAL_NEAR + kr.yards)
       : (GOAL_FAR - kr.yards);
@@ -1040,7 +1075,7 @@
   // animate() ループ内の updateFGKick(dt) が進行を駆動する（ヘッドレスでは pump で駆動）。
   function animateFGKick(targetZ, success, onDone) {
     var startX = 0, startZ = state.los;
-    var endX = success ? 0 : (Math.random() < 0.5 ? 8 : -8);   // 失敗はアップライト外へ外れる
+    var endX = success ? 0 : (gameRng() < 0.5 ? 8 : -8);   // 失敗はアップライト外へ外れる
     fgKick = { t: 0, dur: 1.0, startX: startX, startZ: startZ, endX: endX, endZ: targetZ,
                success: success, onDone: onDone };
     setMarkerColor(success ? 0x35c759 : 0xff3b30);
@@ -1122,6 +1157,7 @@
   // プレイヤーのタイムアウト。攻撃/守備どちらの局面でも使用可。
   // 残数を1つ消費し、次のプレーでクロックを止める（消費小）。前後半3個ずつ。
   function useTimeout() {
+    logInput("timeout", null);
     if (state.gameEnded) return;
     if (state.timeoutsHome <= 0) {
       setBubble("ホイッスル先生：もうタイムアウトは残ってないよ！");
@@ -1164,6 +1200,10 @@
 
   function resetGame() {
     recoverTape();
+    // 再現モードが有効なら、同じシードで乱数を巻き戻してから開始（試合を決定論的に再現可能）。
+    if (replaySeed != null) enableReplay(replaySeed);
+    sysLog = []; sysSeq = 0;
+    logSys({ ev: "gameStart", seed: replaySeed });
     state.home = 0; state.away = 0; state.drive = 0;
     state.down = 1; state.toGo = 10; state.los = 40; state.formation = null; state.phase = "formation";
     state.mode = "offense"; state.cpuStyle = null;
@@ -1194,7 +1234,7 @@
   // けが・テーピング補助（低頻度。次の1プレーだけ担当プレーが軽く不利になる）
   function maybeTape() {
     if (tapeCooldown > 0) { tapeCooldown--; return; }
-    if (Math.random() > 0.15) return;
+    if (gameRng() > 0.15) return;
     if (state.taped) return;
     var idx = Math.floor(rand(0, offense.length));
     var p = offense[idx];
@@ -1222,6 +1262,100 @@
     else setBubble(text.replace(/<b>|<\/b>/g, ""));
   }
   function setBubble(html) { document.getElementById("bubble").innerHTML = html; }
+
+  // ===== 乱数源と再現（リプレイ）システム =====
+  // gameRng は既定で global Math.random を参照（テストの上書きに追従・非シード）。
+  // 再現モードを有効にすると、シードから決定論的 PRNG に差し替え、同じシード＋同じ操作で100%再現できる。
+  var gameRng = function () { return Math.random(); };
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  var replaySeed = null;            // 現在のシード（再現モード時のみ非null）
+  function enableReplay(seed) {
+    replaySeed = (seed >>> 0);
+    var rng = mulberry32(replaySeed);
+    gameRng = rng;
+    if (window.BoxelGame && window.BoxelGame.setRng) window.BoxelGame.setRng(rng);
+    logSys({ ev: "seed", seed: replaySeed });
+  }
+  function disableReplay() {
+    replaySeed = null;
+    gameRng = function () { return Math.random(); };
+    if (window.BoxelGame && window.BoxelGame.setRng) window.BoxelGame.setRng(null);
+  }
+
+  // ===== システムログ（デバッグ用・再現性100%）=====
+  // シード＋各イベントの状態を構造化記録。seed＋同じ操作列で完全再現できる。
+  var sysLog = [], sysSeq = 0;
+  function logSys(obj) {
+    obj.i = sysSeq++;
+    obj.q = state.quarter; obj.clock = Math.round(state.clock); obj.mode = state.mode;
+    obj.down = state.down; obj.toGo = state.toGo; obj.los = state.los;
+    obj.home = state.home; obj.away = state.away; obj.seed = replaySeed;
+    sysLog.push(obj);
+    if (sysLog.length > 3000) sysLog.shift();
+  }
+  function sysLogJSON() { return JSON.stringify({ seed: replaySeed, entries: sysLog }); }
+
+  // ===== ユーザー用ログ（画面＋コンソール・人間可読のプレー実況）=====
+  var playLog = [];
+  function mmss(sec) { var s = Math.max(0, Math.round(sec)); return Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2); }
+  function logPlay(s) {
+    var head = "[Q" + state.quarter + " " + mmss(state.clock) + " " + ordinal(state.down) + "&" + state.toGo + " los" + state.los + " hx" + (state.hashX || 0) + "]";
+    var line = head + " " + s;
+    playLog.push(line);
+    if (playLog.length > 80) playLog.shift();
+    logSys({ ev: "play", text: s.replace(/<[^>]+>/g, "") });   // システムログにも追記
+    if (typeof console !== "undefined" && console.log) console.log(line);
+    var el = (typeof document !== "undefined") && document.getElementById && document.getElementById("playLog");
+    if (el && el.style && el.style.display === "block") renderPlayLog();
+  }
+  // 操作（入力）をシステムログに記録する。seed＋この入力列で完全再現できる。
+  function logInput(ev, val) { logSys({ ev: ev, val: val }); }
+  function renderPlayLog() {
+    var el = document.getElementById("playLog");
+    if (!el) return;
+    var rows = playLog.slice(-30).reverse().map(function (l) { return '<div class="lg-row">' + l.replace(/<[^>]+>/g, "") + '</div>'; }).join("");
+    var seedTxt = (replaySeed != null) ? ("再現モードON seed=" + replaySeed) : "再現モードOFF（通常乱数）";
+    var dbg = '<div class="lg-dbg">' +
+      '<span>' + seedTxt + '</span>' +
+      '<button class="lg-btn" id="logSeedBtn">' + (replaySeed != null ? "OFFにする" : "再現モードON（シード指定）") + '</button>' +
+      '<button class="lg-btn" id="logSysBtn">システムログ(JSON)</button>' +
+      '<button class="lg-btn" id="logCopyBtn">コピー</button>' +
+      '</div><textarea id="logSysArea" class="lg-area" readonly style="display:none"></textarea>';
+    el.innerHTML = '<div class="lg-head">ログ<button class="lg-close" id="logClose">とじる</button></div>' + dbg +
+      '<div class="lg-sub">ユーザー用プレーログ（新しい順）</div>' + rows;
+    var c = document.getElementById("logClose");
+    if (c) c.onclick = function () { el.style.display = "none"; };
+    var sb = document.getElementById("logSeedBtn");
+    if (sb) sb.onclick = function () {
+      if (replaySeed != null) { disableReplay(); }
+      else {
+        var def = String((Date.now ? 0 : 0) || 12345);
+        var s = (typeof prompt !== "undefined") ? prompt("再現用のシード（整数）を入力。次の『はじめる』から決定論的に再現できます。", "12345") : "12345";
+        if (s == null) return;
+        enableReplay(parseInt(s, 10) || 0);
+      }
+      renderPlayLog();
+    };
+    var yb = document.getElementById("logSysBtn");
+    if (yb) yb.onclick = function () {
+      var ta = document.getElementById("logSysArea");
+      ta.value = sysLogJSON(); ta.style.display = "block";
+      if (typeof console !== "undefined" && console.log) console.log(ta.value);
+    };
+    var cp = document.getElementById("logCopyBtn");
+    if (cp) cp.onclick = function () {
+      var ta = document.getElementById("logSysArea");
+      ta.value = sysLogJSON(); ta.style.display = "block"; ta.select && ta.select();
+      try { if (navigator && navigator.clipboard) navigator.clipboard.writeText(ta.value); else document.execCommand && document.execCommand("copy"); } catch (e) {}
+    };
+  }
 
   // メッセージを読み終えるまで待ってから次へ進む。「タップで次へ」クリックで即進行、
   // 押されなくても長め(30秒)の安全フォールバックで自動進行する（ヘッドレスでは即時実行）。
@@ -1316,6 +1450,7 @@
   }
 
   function pickFormation(f) {
+    logInput("formation", f);
     showPersonnelBtn(false);   // プレー選択へ進むので編成変更ボタンは隠す
     state.formation = f; placeFormation(f); state.phase = "play";
     // 守備がこの隊形に反応してカバレッジを選び、テルを見せる（読み合い）
@@ -1336,6 +1471,7 @@
 
   // キック（フィールドゴール／パント）。FGは2タップのミニゲーム、成否はキッカーの kick 力と距離・狙い・パワーで決まる
   function kickPlay(type) {
+    logInput("kick", type);
     state.phase = "animating"; setCards([]);
     var kicker = byRole("P") || bestKicker();
     var kickStat = statOf(kicker, "kick");
@@ -1794,6 +1930,13 @@
   };
   document.getElementById("helpClose").onclick = function () {
     document.getElementById("help").style.display = "none";
+  };
+
+  // プレーログの開閉
+  document.getElementById("logBtn").onclick = function () {
+    var el = document.getElementById("playLog");
+    if (el.style.display === "block") { el.style.display = "none"; return; }
+    el.style.display = "block"; renderPlayLog();
   };
 
   // タイムアウトボタン（攻撃/守備どちらの局面でも使用可）
