@@ -46,6 +46,7 @@ def launch_any(p):
         ("Chromium (bundled)", lambda: p.chromium.launch(
             headless=HEADLESS, args=["--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"])),
     ]
+    errors = []
     for name, fn in attempts:
         try:
             b = fn()
@@ -53,10 +54,12 @@ def launch_any(p):
             pg.goto("about:blank")
             pg.close()
             print("[INFO] 起動成功: " + name)
-            return name, b
+            return name, b, errors
         except Exception as e:
-            print("[WARN] 起動失敗: " + name + " -> " + str(e).splitlines()[0][:120])
-    return None, None
+            msg = name + " -> " + str(e).splitlines()[0][:160]
+            errors.append(msg)
+            print("[WARN] 起動失敗: " + msg)
+    return None, None, errors
 
 
 # 1試合のドライブ。ページの実状態を読みながらランダムに操作する。
@@ -130,11 +133,77 @@ def main():
     page_errors = []
     console_errors = []
     games = []
+    fatal = None
+    launch_errors = []
+    browser_name = None
+    try:
+        _run(page_errors, console_errors, games, launch_errors_out=launch_errors,
+             name_out=lambda n: globals().__setitem__("_BROWSER_NAME", n))
+        browser_name = globals().get("_BROWSER_NAME")
+    except Exception as e:
+        import traceback
+        fatal = repr(e) + " | " + traceback.format_exc().splitlines()[-1]
+        print("[FATAL] " + fatal)
+
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    out = {
+        "ts": ts, "games": GAMES, "turbo": TURBO, "headless": HEADLESS,
+        "browser": browser_name, "fatal": fatal, "launchErrors": launch_errors,
+        "pageErrors": page_errors, "consoleErrors": console_errors,
+        "results": games,
+    }
+    jpath = LOGS / ("random_games_%s.json" % ts)
+    jpath.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+    (LOGS / "latest.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
+
+    lines = ["# ランダム%d試合 E2E ログ要約 (%s)" % (GAMES, ts), ""]
+    lines.append("- browser: %s / headless: %s / turbo: %s" % (browser_name, HEADLESS, TURBO))
+    if fatal:
+        lines.append("- FATAL: " + fatal)
+    if launch_errors:
+        lines.append("- 起動失敗: " + " | ".join(launch_errors))
+    lines.append("- pageError: %d / consoleError: %d" % (len(page_errors), len(console_errors)))
+    ng = 0
+    for g in games:
+        ok = g.get("ended") and not g.get("anomalies") and g.get("newErrors", 0) == 0 and not g.get("loadError") and not g.get("driveError")
+        if not ok:
+            ng += 1
+        fin = g.get("final") or {}
+        lines.append("- seed=%s %s 終了=%s 得点=%s-%s steps=%s 異常=%s err=%s %s%s" % (
+            g.get("seed"), "[OK]" if ok else "[NG]", g.get("ended"),
+            fin.get("home"), fin.get("away"), g.get("steps"),
+            len(g.get("anomalies", []) or []), g.get("newErrors", 0),
+            ("load:" + g["loadError"]) if g.get("loadError") else "",
+            ("drive:" + g["driveError"]) if g.get("driveError") else ""))
+        for a in (g.get("anomalies") or [])[:5]:
+            lines.append("    - 異常: " + a)
+    lines.append("")
+    total_ng = ng + (1 if (fatal or not games) else 0)
+    lines.append("- 総合: %s （NG %d / %d, games=%d）" % ("ALL OK" if total_ng == 0 else "要確認", ng, GAMES, len(games)))
+    if page_errors:
+        lines.append("- pageError 例: " + " | ".join(page_errors[:5]))
+    if console_errors:
+        lines.append("- consoleError 例: " + " | ".join(console_errors[:5]))
+    md = "\n".join(lines)
+    (LOGS / ("random_games_%s.md" % ts)).write_text(md, encoding="utf-8")
+    (LOGS / "latest.md").write_text(md, encoding="utf-8")
+
+    print("\n==== 出力 ====")
+    print("  " + str(LOGS / "latest.json") + " / " + str(LOGS / "latest.md"))
+    print("  スクショ: " + str(SHOTS))
+    print(("[OK] ALL OK" if total_ng == 0 else "[NG] 要確認") + " / games=%d pageError=%d consoleError=%d%s" % (
+        len(games), len(page_errors), len(console_errors), (" FATAL" if fatal else "")))
+    return 0 if total_ng == 0 else 1
+
+
+def _run(page_errors, console_errors, games, launch_errors_out, name_out):
     with sync_playwright() as p:
-        name, browser = launch_any(p)
+        name, browser, lerrs = launch_any(p)
+        launch_errors_out.extend(lerrs)
         if browser is None:
             print("[NG] どのブラウザも起動できませんでした")
-            return 1
+            return
+        name_out(name)
         page = browser.new_page(viewport={"width": 1024, "height": 720})
         page.on("pageerror", lambda e: page_errors.append(str(e)))
         page.on("console", lambda m: console_errors.append(m.text) if m.type == "error" else None)
@@ -165,52 +234,6 @@ def main():
                 (g.get("final") or {}).get("home"), (g.get("final") or {}).get("away"),
                 g.get("ended"), len(g.get("anomalies", []) or []), g.get("newErrors", 0)))
         browser.close()
-
-    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    out = {
-        "ts": ts, "games": GAMES, "turbo": TURBO,
-        "pageErrors": page_errors, "consoleErrors": console_errors,
-        "results": games,
-    }
-    jpath = LOGS / ("random_games_%s.json" % ts)
-    jpath.write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
-    (LOGS / "latest.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
-
-    # 人間/レビュー用 要約
-    lines = ["# ランダム10試合 E2E ログ要約 (%s)" % ts, ""]
-    lines.append("- 試合数: %d / turbo: %s / pageError: %d / consoleError: %d" % (GAMES, TURBO, len(page_errors), len(console_errors)))
-    ng = 0
-    for g in games:
-        ok = g.get("ended") and not g.get("anomalies") and g.get("newErrors", 0) == 0 and not g.get("loadError") and not g.get("driveError")
-        if not ok:
-            ng += 1
-        fin = g.get("final") or {}
-        lines.append("- seed=%s %s 終了=%s 得点=%s-%s steps=%s 異常=%s err=%s %s%s" % (
-            g.get("seed"), "[OK]" if ok else "[NG]", g.get("ended"),
-            fin.get("home"), fin.get("away"), g.get("steps"),
-            len(g.get("anomalies", []) or []), g.get("newErrors", 0),
-            ("load:" + g["loadError"]) if g.get("loadError") else "",
-            ("drive:" + g["driveError"]) if g.get("driveError") else ""))
-        for a in (g.get("anomalies") or [])[:5]:
-            lines.append("    - 異常: " + a)
-    lines.append("")
-    lines.append("- 総合: %s （NG %d / %d）" % ("ALL OK" if ng == 0 else "要確認", ng, GAMES))
-    if page_errors:
-        lines.append("- pageError 例: " + " | ".join(page_errors[:5]))
-    if console_errors:
-        lines.append("- consoleError 例: " + " | ".join(console_errors[:5]))
-    lines.append("")
-    lines.append("詳細(全システムログ)は同名 .json / latest.json を参照。")
-    md = "\n".join(lines)
-    (LOGS / ("random_games_%s.md" % ts)).write_text(md, encoding="utf-8")
-    (LOGS / "latest.md").write_text(md, encoding="utf-8")
-
-    print("\n==== 出力 ====")
-    print("  " + str(jpath))
-    print("  " + str(LOGS / "latest.json") + " / " + str(LOGS / "latest.md"))
-    print("  スクショ: " + str(SHOTS))
-    print(("[OK] ALL OK" if ng == 0 else "[NG] 要確認 NG=%d" % ng) + " / pageError=%d consoleError=%d" % (len(page_errors), len(console_errors)))
-    return 0 if (ng == 0 and not page_errors and not console_errors) else 1
 
 
 if __name__ == "__main__":
