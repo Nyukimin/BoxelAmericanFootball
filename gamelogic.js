@@ -22,6 +22,34 @@
    *   ctx.tapedRole {string|null} "QB"|"RB"|"WR"|"OL"|null
    * @returns {{ yards:number, complete:boolean, turnover:boolean, msg:string }}
    */
+  /**
+   * サック確率を返す（純粋関数・乱数不使用）。
+   * olPower が高いほど低く、dPower が高いほど高い。0.03〜0.30 にクランプ。
+   * @param {object} opts opts.olPower {number} opts.dPower {number}
+   * @returns {number} [0.03, 0.30]
+   */
+  function sackChance(opts) {
+    var olPower = (opts && opts.olPower != null) ? opts.olPower : 6;
+    var dPower  = (opts && opts.dPower  != null) ? opts.dPower  : 6;
+    var base = 0.12;
+    var chance = base + (dPower - 6) * 0.025 - (olPower - 6) * 0.020;
+    return Math.max(0.03, Math.min(0.30, chance));
+  }
+
+  /**
+   * スタミナ係数を返す（純粋関数）。
+   * current が満タン(max)なら 1.0、消耗すると 0.7 まで低下。
+   * @param {object} opts opts.current {number} opts.max {number}
+   * @returns {number} [0.7, 1.0]
+   */
+  function staminaFactor(opts) {
+    var current = (opts && opts.current != null) ? opts.current : 1;
+    var max     = (opts && opts.max     != null) ? opts.max     : 1;
+    if (max <= 0) return 1.0;
+    var ratio = Math.max(0, Math.min(1, current / max));
+    return 0.7 + 0.3 * ratio;
+  }
+
   function outcome(formation, play, ctx) {
     var rbSpeed  = (ctx && ctx.rbSpeed  != null) ? ctx.rbSpeed  : 6;
     var olPower  = (ctx && ctx.olPower  != null) ? ctx.olPower  : 6;
@@ -34,6 +62,13 @@
     var dPower = (ctx && ctx.dPower != null) ? ctx.dPower : 6;
     var dSpeed = (ctx && ctx.dSpeed != null) ? ctx.dSpeed : 6;
     var dpwr = dPower / 6, dspd = dSpeed / 6;
+    // 個別マッチアップ（未指定は wrCatch/wrSpeed/中立にフォールバック）
+    var recvCatch  = (ctx && ctx.recvCatch  != null) ? ctx.recvCatch  : wrCatch;
+    var recvSpeed  = (ctx && ctx.recvSpeed  != null) ? ctx.recvSpeed  : wrSpeed;
+    var qbAcc      = (ctx && ctx.qbAcc     != null) ? ctx.qbAcc      : 6;
+    var qbArm      = (ctx && ctx.qbArm     != null) ? ctx.qbArm      : 6;
+    var coverSpeed = (ctx && ctx.coverSpeed != null) ? ctx.coverSpeed : dSpeed;
+    var cvspd = coverSpeed / 6;
 
     var r = _rng(), y = 0, complete = true, turnover = false, msg = "", reason = "";
     var runHurt  = tapedRole === "RB" || tapedRole === "OL";
@@ -44,6 +79,8 @@
     var pwr   = olPower  / 6;
     var cat   = wrCatch  / 6;
     var wrSpd = wrSpeed  / 6;
+    var rcvCat = recvCatch / 6;
+    var rcvSpd = recvSpeed / 6;
 
     function rand(a, b) { return a + _rng() * (b - a); }
 
@@ -59,16 +96,25 @@
       if (_rng() > 0.92) { y = -(1 + Math.round(rand(0, 4))); msg = "止められて後退…！"; reason = "loss"; }
       else { msg = "ランで前進！"; reason = "run"; }
     } else if (play === "short") {
-      var dropS = 0.16 / cat;                               // 捕球低いほど落球
+      // サック判定（高乱数側で発火。_rng()=0 では発生しない）
+      var sc = sackChance({ olPower: olPower, dPower: dPower });
+      if (_rng() > 1 - sc) {
+        var sackYds = -(3 + Math.round(_rng() * 6));
+        return { yards: sackYds, complete: true, turnover: false,
+                 msg: "サック！ QBが" + Math.abs(sackYds) + "ヤード後退…！", reason: "sack" };
+      }
+      var dropS = 0.16 / rcvCat;                            // 捕球低いほど落球（受け手ベース）
       var failT = (passHurt ? 0.30 : 0.10) + dropS;
       failT = Math.max(0.02, Math.min(0.95, failT - 0.18 * edge)); // 読み合い: ◎で成功しやすく
       failT = Math.max(0.02, Math.min(0.95, failT + 0.12 * (dspd - 1))); // 守備が速いほど失敗↑
+      failT = Math.max(0.02, Math.min(0.95, failT + 0.10 * (cvspd - 1))); // カバーDBが速いほど失敗↑
+      failT = Math.max(0.02, Math.min(0.95, failT - 0.06 * ((qbAcc - 6) / 6))); // QB精度が高いほど成功↑
       if (r < failT) {
         complete = false; y = 0;
         msg = (r < dropS ? "あっ、落球…！" : "パス失敗…ドンマイ！");
         reason = (r < dropS ? "drop" : "miss");
       } else {
-        y = rand(4, 8) + rand(0, 3) * wrSpd;
+        y = rand(4, 8) + rand(0, 3) * rcvSpd;
         if (formation === "shotgun" || formation === "single") y += rand(1, 3);
         if (passHurt) y *= 0.7;
         y *= (1 + 0.4 * edge);
@@ -77,13 +123,22 @@
       }
     } else {
       // long
-      var dropL = 0.14 / cat;
+      // サック判定（高乱数側で発火。_rng()=0 では発生しない）
+      var scL = sackChance({ olPower: olPower, dPower: dPower });
+      if (_rng() > 1 - scL) {
+        var sackYdsL = -(3 + Math.round(_rng() * 6));
+        return { yards: sackYdsL, complete: true, turnover: false,
+                 msg: "サック！ QBが" + Math.abs(sackYdsL) + "ヤード後退…！", reason: "sack" };
+      }
+      var dropL = 0.14 / rcvCat;
       var intT  = passHurt ? 0.16 : 0.1;
       if (edge < 0) intT += 0.04;                           // 相性△（ロング対ゾーン）は奪われやすい
       intT = Math.max(0, intT + 0.05 * (dspd - 1));         // 守備が速いとインターセプト↑
+      intT = Math.max(0, intT + 0.04 * (cvspd - 1));        // カバーDBが速いとインターセプト↑
       var missT = (passHurt ? 0.55 : 0.42) + dropL;
       missT = Math.max(0.05, Math.min(0.97, missT - 0.20 * edge)); // 読み合い: ◎で通りやすく
       missT = Math.max(0.05, Math.min(0.97, missT + 0.15 * (dspd - 1))); // 守備が速いほど届きにくい
+      missT = Math.max(0.05, Math.min(0.97, missT - 0.08 * ((qbArm - 6) / 6))); // QB腕力が高いほど届きやすい
       if (r < intT) {
         turnover = true; y = 0; msg = "インターセプト！相手ボールに…"; reason = "intercept";
       } else if (r < missT) {
@@ -91,7 +146,7 @@
         msg = (r < intT + dropL ? "あぁ落球…！" : "ロングパスは届かず…！");
         reason = (r < intT + dropL ? "drop" : "overthrow");
       } else {
-        y = rand(12, 26) + rand(0, 8) * wrSpd;
+        y = rand(12, 26) + rand(0, 8) * rcvSpd;
         if (formation === "shotgun") y += rand(2, 6);
         if (passHurt) y *= 0.7;
         y *= (1 + 0.4 * edge);
@@ -567,6 +622,8 @@
     kickoffResult: kickoffResult,
     onsideRecovered: onsideRecovered,
     puntReturn: puntReturn,
-    playClockCost: playClockCost
+    playClockCost: playClockCost,
+    sackChance: sackChance,
+    staminaFactor: staminaFactor
   };
 })();

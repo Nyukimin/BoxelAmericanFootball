@@ -249,6 +249,10 @@
         if (idx >= roles.length) break;
       }
     }
+    // 編成交代でスタミナをリセット（新しい選手として扱う）
+    offense.forEach(function (p) {
+      if (p.userData.staminaMax) p.userData.stamina = p.userData.staminaMax;
+    });
   }
   function statOf(p, key) { return (p && p.userData && p.userData.stats && p.userData.stats[key]) || 6; }
   function teamStat(list, role, key) { var s = 0, n = 0; list.forEach(function (p) { if (p.userData.role === role) { s += statOf(p, key); n++; } }); return n ? s / n : 6; }
@@ -459,16 +463,42 @@
   }
 
   function outcome(formation, play) {
+    // ターゲット選択があれば受け手を使用、なければ先頭WRにフォールバック
+    var recvPlayer = (state.passTarget) ? state.passTarget : wr;
+    var recvStats  = recvPlayer.userData.stats || {};
+    var qbStats    = qb.userData.stats || {};
+    // スタミナ係数（stamina 未設定なら 1.0 = 無影響）
+    var recvFactor = window.BoxelGame.staminaFactor({
+      current: recvPlayer.userData.stamina,
+      max:     recvPlayer.userData.staminaMax
+    });
+    var rbFactor = window.BoxelGame.staminaFactor({
+      current: rb.userData.stamina,
+      max:     rb.userData.staminaMax
+    });
+    // カバーする DB の速度（ターゲットに最も近い CB/S）
+    var coverDbSpeed = defenseStat("speed");
+    if (state.passTargetDbSpeed != null) coverDbSpeed = state.passTargetDbSpeed;
     var ctx = {
-      rbSpeed:  statOf(rb, "speed"),
-      olPower:  teamStat(offense, "OL", "power"),
-      wrCatch:  statOf(wr, "catch"),
-      wrSpeed:  statOf(wr, "speed"),
+      rbSpeed:   statOf(rb, "speed") * rbFactor,
+      olPower:   teamStat(offense, "OL", "power"),
+      wrCatch:   statOf(wr, "catch"),
+      wrSpeed:   statOf(wr, "speed"),
       tapedRole: state.taped ? state.taped.role : null,
-      coverage: state.defCoverage || null,
-      dPower: defenseStat("power"),   // 相手守備ラインの強さ
-      dSpeed: defenseStat("speed")    // 相手カバーの速さ
+      coverage:  state.defCoverage || null,
+      dPower:    defenseStat("power"),
+      dSpeed:    defenseStat("speed"),
+      // 個別マッチアップ
+      recvCatch:  (recvStats.catch  != null ? recvStats.catch  : 6) * recvFactor,
+      recvSpeed:  (recvStats.speed  != null ? recvStats.speed  : 6) * recvFactor,
+      qbAcc:      qbStats.catch  != null ? qbStats.catch  : 6,
+      qbArm:      qbStats.power  != null ? qbStats.power  : 6,
+      coverSpeed: coverDbSpeed
     };
+    // アニメ用に受け手を保存し、state から消去
+    state._lastPassCarrier = recvPlayer;
+    state.passTarget = null;
+    state.passTargetDbSpeed = null;
     return window.BoxelGame.outcome(formation, play, ctx);
   }
 
@@ -499,11 +529,20 @@
     if (pre) { applyPrePenalty(pre); return; }   // スナップ前反則ならプレーせずやり直し
     var o = outcome(state.formation, play);
     logPlay("攻撃スナップ " + state.formation + "/" + playName(play) + " → " + o.msg.replace(/<[^>]+>/g, "") + " (yards=" + o.yards + ")");
+    // ターゲット選択時は受け手を上書き（TE/RB へのパスにも対応）
+    if ((play === "short" || play === "long") && state._lastPassCarrier) {
+      wr = state._lastPassCarrier;
+      state._lastPassCarrier = null;
+    }
     var startZ = state.los;
     var endZ = Math.min(state.los + o.yards, GOAL_FAR);
+    if (o.reason === "sack") endZ = Math.max(GOAL_NEAR + 1, state.los + o.yards);
     o.endZ = endZ;
     var dur, kind;
-    if (play === "run") { kind = "run"; carrier = rb; var sp = (carrier.userData.stats && carrier.userData.stats.speed) || 6; dur = (1.0 + o.yards * 0.04) * (1.15 - sp * 0.03); }
+    if (o.reason === "sack") {
+      // サック: ランアニメで QB を後退させる
+      kind = "run"; carrier = qb; dur = 0.85;
+    } else if (play === "run") { kind = "run"; carrier = rb; var sp = (carrier.userData.stats && carrier.userData.stats.speed) || 6; dur = (1.0 + o.yards * 0.04) * (1.15 - sp * 0.03); }
     else { kind = "pass"; carrier = wr; dur = 0.85 + o.yards * 0.025; }   // 距離に応じて時間を伸ばす
 
     // 初期位置を保存し、ライン攻防・タックラーを事前計算
@@ -610,6 +649,15 @@
 
   function finalize(o) {
     recoverTape();
+    // スタミナ疲労: キャリアを1消耗、関与しなかった攻撃選手を1回復（満タンまで）。
+    // stamina 未設定（staminaMax なし）の選手は対象外＝無影響（後方互換）。
+    if (carrier && carrier.userData.staminaMax) {
+      carrier.userData.stamina = Math.max(0, (carrier.userData.stamina || 0) - 1);
+    }
+    offense.forEach(function (p) {
+      if (p === carrier || !p.userData.staminaMax) return;
+      p.userData.stamina = Math.min(p.userData.staminaMax, (p.userData.stamina || 0) + 1);
+    });
     // アウトオブバウンズ判定（成功プレーのみ・低確率）。クロック停止になり消費小。
     // テストは gameRng()=0 固定のため高乱数側で発火させ誤発火を防ぐ。
     var oob = false;
@@ -1211,7 +1259,9 @@
     state.timeoutsHome = 3; state.timeoutsAway = 3; state.twoMinWarned = false;
     state.clockStopped = false; state.gameEnded = false;
     state.hashX = 0; state.fwdPassUsed = false;
+    state.passTarget = null; state.passTargetDbSpeed = null; state._lastPassCarrier = null;
     hintsShown = {};
+    initStamina(homeOff); initStamina(homeDef); initStamina(awayOff); initStamina(awayDef);
     setActiveUnits("offense");
     updateHUD();
     // オープニングキックオフ（homeが受球）。非インタラクティブでwaitContinueにより即choosePersonnelUIへ到達。
@@ -1252,6 +1302,17 @@
     if (!t) return;
     if (t.band && t.player) t.player.remove(t.band);
     state.taped = null;
+  }
+
+  // スタミナの初期化（リセット時に全選手を満タンにする）
+  function initStamina(players) {
+    if (!players) return;
+    players.forEach(function (p) {
+      var s = p.userData.stats;
+      var max = (s && s.stamina != null) ? s.stamina : 8;
+      p.userData.stamina    = max;
+      p.userData.staminaMax = max;
+    });
   }
 
   function ordinal(d) { return d === 1 ? "1st" : d === 2 ? "2nd" : d === 3 ? "3rd" : "4th"; }
@@ -1459,14 +1520,57 @@
     setBubble("<b>" + f.toUpperCase() + "</b> だね！ 相手は" + coverageTellText(state.defCoverage) + " <b>プレー</b>を選ぼう。");
     var cards = [
       { ico: "🏃", t: "ラン", d: "走って前進。確実だが小さめ", fn: function () { startPlay("run"); } },
-      { ico: "✋", t: "ショートパス", d: "近くへ短く。成功しやすい", fn: function () { startPlay("short"); } },
-      { ico: "🎈", t: "ロングパス", d: "大きく前進。リスクも大きい", fn: function () { startPlay("long"); } }
+      { ico: "✋", t: "ショートパス", d: "近くへ短く。成功しやすい", fn: function () { chooseTargetUI("short"); } },
+      { ico: "🎈", t: "ロングパス", d: "大きく前進。リスクも大きい", fn: function () { chooseTargetUI("long"); } }
     ];
     if (state.down === 4) {
       cards.push({ ico: "🥅", t: "フィールドゴール", d: "成功で3点。近いほど決まる", fn: function () { kickPlay("fg"); } });
       cards.push({ ico: "👟", t: "パント", d: "相手を深い位置に。攻守交代", fn: function () { kickPlay("punt"); } });
     }
     setCards(cards);
+  }
+
+  // パスプレーのターゲット（受け手）を選ぶ
+  function chooseTargetUI(play) {
+    state.phase = "play";
+    var targets = offense.filter(function (p) {
+      var r = p.userData.role; return r === "WR" || r === "TE" || r === "RB";
+    });
+    if (targets.length === 0) { startPlay(play); return; }
+    var playLabel = play === "short" ? "ショートパス" : "ロングパス";
+    setBubble("ホイッスル先生：<b>誰に投げる？</b> " + playLabel + " のターゲットを選ぼう！");
+    var icoMap = { WR: "🏃", TE: "💪", RB: "⚖️" };
+    setCards(targets.map(function (t) {
+      var s = t.userData.stats || {};
+      var catchVal = s.catch  != null ? s.catch  : 6;
+      var speedVal = s.speed  != null ? s.speed  : 6;
+      var stamBar  = t.userData.staminaMax ? Math.round(t.userData.stamina / t.userData.staminaMax * 10) : 10;
+      return {
+        ico: icoMap[t.userData.role] || "🏈",
+        t:   t.userData.name || t.userData.role,
+        d:   t.userData.role + " | 捕" + catchVal + " 速" + speedVal + " 体" + stamBar,
+        fn:  (function (target) { return function () { startPlayWithTarget(play, target); }; })(t)
+      };
+    }));
+  }
+
+  // ターゲットを確定してプレーを開始する
+  function startPlayWithTarget(play, target) {
+    // 最寄りの CB/S をカバー担当 DB として特定
+    var coverDbSpeed = defenseStat("speed");
+    var dbs = defense.filter(function (d) { var r = d.userData.role; return r === "CB" || r === "S"; });
+    if (dbs.length > 0) {
+      var minDist = Infinity, nearest = dbs[0];
+      dbs.forEach(function (db) {
+        var dx = db.position.x - target.position.x, dz = db.position.z - target.position.z;
+        var d2 = dx * dx + dz * dz;
+        if (d2 < minDist) { minDist = d2; nearest = db; }
+      });
+      coverDbSpeed = (nearest.userData.stats && nearest.userData.stats.speed) || 6;
+    }
+    state.passTarget = target;
+    state.passTargetDbSpeed = coverDbSpeed;
+    startPlay(play);
   }
 
   // キック（フィールドゴール／パント）。FGは2タップのミニゲーム、成否はキッカーの kick 力と距離・狙い・パワーで決まる

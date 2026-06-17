@@ -62,11 +62,11 @@
   // ===== パラメータのプリセット =====  選手の stats に名前で指定して使い回せる
   // 値は 1〜10 の目安（speed=足の速さ, power=パワー, catch=捕球, kick=キック）
   var STAT_PRESETS = {
-    speedy:   { speed: 9, power: 4, catch: 6, kick: 3 }, // 足が速い
-    power:    { speed: 4, power: 9, catch: 5, kick: 3 }, // パワー型
-    hands:    { speed: 6, power: 4, catch: 9, kick: 3 }, // 捕球がうまい
-    kicker:   { speed: 5, power: 5, catch: 4, kick: 9 }, // キックが得意
-    allround: { speed: 6, power: 6, catch: 6, kick: 6 }  // バランス型
+    speedy:   { speed: 9, power: 4, catch: 6, kick: 3, stamina: 8 }, // 足が速い
+    power:    { speed: 4, power: 9, catch: 5, kick: 3, stamina: 7 }, // パワー型
+    hands:    { speed: 6, power: 4, catch: 9, kick: 3, stamina: 8 }, // 捕球がうまい
+    kicker:   { speed: 5, power: 5, catch: 4, kick: 9, stamina: 9 }, // キックが得意
+    allround: { speed: 6, power: 6, catch: 6, kick: 6, stamina: 8 }  // バランス型
   };
 
   // ===== 攻撃チーム（味方）の編成 =====  各選手 = name / role / animal+fur / stats

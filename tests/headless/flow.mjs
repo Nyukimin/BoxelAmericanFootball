@@ -597,17 +597,17 @@ if (loadError === null) {
     }
     const cs = cards();
     if (cs.length === 3) {
-      // 3枚カード: 編成 / 守備構え / 守備作戦を区別する
+      // 3枚カード: 編成 / 守備構え / 守備作戦 / ターゲット選択を区別する
       // 守備作戦（マン/ゾーン/ブリッツ）選択後はアニメが走るため pump が必要
       const html0 = cs[0]._innerHTML || "";
       const isCoverage = html0.includes("マン") || html0.includes("ゾーン") || html0.includes("ブリッツ");
       if (cs[0].onclick) cs[0].onclick();
-      if (isCoverage) pump(60);
+      pump(isCoverage ? 60 : 10);
     } else if (cs.length === 4) {
       // 隊形選択
       if (cs[0].onclick) cs[0].onclick();
     } else if (cs.length >= 3) {
-      // プレー選択（ラン = 0）
+      // プレー選択（ラン = 0）またはターゲット選択
       if (cs[0].onclick) cs[0].onclick();
       pump(60);
     } else {
@@ -653,6 +653,9 @@ if (loadError === null) {
   const playCs0 = cards();
   // ロングパスは index=2
   if (playCs0.length >= 3 && playCs0[2].onclick) playCs0[2].onclick();
+  // ターゲット選択カードが出た場合は先頭をクリック
+  const targetCs0 = cards();
+  if (targetCs0.length > 0 && targetCs0[0].onclick) targetCs0[0].onclick();
   pump(60);
 
   const awayScore = getElementById("awayS").textContent;
@@ -684,6 +687,9 @@ if (loadError === null) {
 
   const playH = cards();
   if (playH.length >= 3 && playH[2].onclick) playH[2].onclick(); // ロングパス（index=2）
+  // ターゲット選択カードが出た場合は先頭をクリック
+  const targetH = cards();
+  if (targetH.length > 0 && targetH[0].onclick) targetH[0].onclick();
   pump(60);
 
   // endPossession → startOppPossession → oppDownUI → 守りの構えカード 3 枚（1段目）
@@ -747,7 +753,7 @@ if (loadError === null) {
       const html0 = cs[0]._innerHTML || "";
       const isCoverage = html0.includes("マン") || html0.includes("ゾーン") || html0.includes("ブリッツ");
       if (cs[0].onclick) cs[0].onclick();
-      if (isCoverage) pump(60);
+      pump(isCoverage ? 60 : 10);
     } else if (cs.length >= 1 && cs[0].onclick) { cs[0].onclick(); pump(60); }
     else pump(10);
   }
