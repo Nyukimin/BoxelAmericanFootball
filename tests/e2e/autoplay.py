@@ -32,7 +32,8 @@ LOGS.mkdir(exist_ok=True)
 
 GAMES = int(sys.argv[1]) if len(sys.argv) > 1 else 10
 HOST = "127.0.0.1"
-TIMEOUT = 600  # 秒。これを超えたら諦めて終了。
+# 1試合 turbo で数秒。試合数に応じてタイムアウトを自動延長（最低5分、+5秒/試合、上限2時間）。
+TIMEOUT = min(7200, max(300, GAMES * 5 + 120))
 
 _done = threading.Event()
 _result = {"data": None}
