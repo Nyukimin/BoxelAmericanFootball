@@ -2067,6 +2067,7 @@
     nGames = nGames || 10;
     var turbo = opts.turbo || 0.08;
     var maxSteps = opts.maxSteps || 8000;
+    var postUrl = opts.postUrl || null;   // 指定時は結果をサーバへPOST（ローカルサーバ自動化用）
     var cur = 0;
     var out = { games: nGames, turbo: turbo, ua: (typeof navigator !== "undefined" ? navigator.userAgent : ""), errors: [], results: [] };
     window.__AUTOPLAY = out;
@@ -2141,16 +2142,31 @@
       if (typeof window !== "undefined") window.onerror = prevOnerror;
       var ng = out.results.filter(function (r) { return !r.ended || r.fatal || (r.newErrors || 0) > 0 || (r.anomalies && r.anomalies.length); }).length;
       out.summary = { ng: ng, total: nGames, errors: out.errors.length };
-      // ファイルへ保存（ダウンロード）
-      try {
-        var blob = new Blob([JSON.stringify(out)], { type: "application/json" });
-        var a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = "baf_autoplay.json";
-        document.body.appendChild(a); a.click();
-        setTimeout(function () { try { document.body.removeChild(a); } catch (e) {} }, 1500);
-      } catch (e) { out.errors.push({ game: 0, msg: "download " + e.message }); }
-      setBubble("自動" + nGames + "試合 完了。NG=" + ng + " / 例外=" + out.errors.length + "。<b>baf_autoplay.json</b> を保存しました（ダウンロードフォルダ）。");
+      var json = JSON.stringify(out);
+      var saved = false;
+      // 1) ローカルサーバ自動化: postUrl があればサーバへPOST（同一オリジン＝CORS不要）。
+      if (postUrl) {
+        try {
+          var res = await fetch(postUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: json });
+          saved = !!(res && res.ok);
+        } catch (e) {
+          // sendBeacon フォールバック（ページ閉鎖耐性）
+          try { saved = (typeof navigator !== "undefined" && navigator.sendBeacon) ? navigator.sendBeacon(postUrl, json) : false; } catch (e2) { saved = false; }
+        }
+      }
+      // 2) POSTできない（file://直開き等）場合はダウンロード保存にフォールバック。
+      if (!saved) {
+        try {
+          var blob = new Blob([json], { type: "application/json" });
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "baf_autoplay.json";
+          document.body.appendChild(a); a.click();
+          setTimeout(function () { try { document.body.removeChild(a); } catch (e) {} }, 1500);
+        } catch (e) { out.errors.push({ game: 0, msg: "download " + e.message }); }
+      }
+      setBubble("自動" + nGames + "試合 完了。NG=" + ng + " / 例外=" + out.errors.length +
+        "。" + (saved ? "サーバへ送信しました（このタブは閉じてOK）。" : "<b>baf_autoplay.json</b> を保存しました（ダウンロードフォルダ）。"));
       if (typeof console !== "undefined" && console.log) console.log("[AUTOPLAY DONE]", out.summary, out);
     })();
     return "autoplay started: " + nGames + " games";
@@ -2177,8 +2193,9 @@
   // URL に ?autoplay=N があれば自動プレーを開始（実ブラウザのみ。ヘッドレスは location 無しでスキップ）。
   try {
     if (typeof location !== "undefined" && location.search) {
-      var _ap = new URLSearchParams(location.search).get("autoplay");
-      if (_ap != null) autoPlay(parseInt(_ap, 10) || 10);
+      var _q = new URLSearchParams(location.search);
+      var _ap = _q.get("autoplay");
+      if (_ap != null) autoPlay(parseInt(_ap, 10) || 10, { postUrl: _q.get("post") });
     }
   } catch (e) { if (typeof console !== "undefined") console.warn("autoplay trigger skipped", e); }
 })();

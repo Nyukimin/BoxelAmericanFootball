@@ -6,20 +6,29 @@
 `Target page closed`）。`tests/e2e/random_games.py` ・`run_e2e.py` は環境依存で不安定なため、実ブラウザ検証は
 **ページ自身が自動プレーする方式**（`index.html` 内 `autoPlay()`）を正とする。
 
-### 使い方（あなたの普段のブラウザでOK）
+### 使い方A（推奨・ワンコマンドで全自動）
 
-1. ファイルを直接開く（どちらでも可）:
-   - Finder で `index.html` をダブルクリック、または
-   - ターミナルで:
-     ```
-     open "/Users/yukimikawaguchi/Documents/BoxelAmericanFootball/index.html?autoplay=10"
-     ```
-   `?autoplay=10` を付けると、開いた瞬間に **seed=1..10 の10試合を自動でランダムプレー**する。
-2. 画面の吹き出しが「自動プレー中… n/10」→「完了」に変わるまで待つ（turbo短縮で数十秒程度）。
-3. 完了時に **`baf_autoplay.json`** がダウンロードフォルダ（`~/Downloads`）に保存される。
-4. 「終わった」と伝えてくれれば、こちらが `~/Downloads/baf_autoplay.json` を読んで全試合を解析する。
+```
+cd /Users/yukimikawaguchi/Documents/BoxelAmericanFootball
+python tests/e2e/autoplay.py        # 10試合（試合数を変えるなら: python tests/e2e/autoplay.py 5）
+```
+これだけで:
+1. ローカルHTTPサーバが index.html を配信し、
+2. あなたの普段のブラウザが自動で開き、
+3. seed=1..N をランダム自動プレーし、
+4. 結果をサーバへ自動POST → `tests/e2e/logs/latest.json` ＋ `latest.md` に保存して自動終了。
 
-URLを付けずに開いた場合でも、コンソールで `__BoxelTest.autoPlay(10)` を実行すれば同じことができる。
+手元のファイル操作は不要。終わったらこちらが `tests/e2e/logs/latest.json` を読む。
+（three.js を CDN から読むためネット接続が必要。ブラウザは閉じてOK。）
+
+### 使い方B（サーバ無しで直接開く・フォールバック）
+
+ターミナルで:
+```
+open "/Users/yukimikawaguchi/Documents/BoxelAmericanFootball/index.html?autoplay=10"
+```
+開いた瞬間に自動プレーし、完了時に **`baf_autoplay.json`** がダウンロードフォルダ（`~/Downloads`）へ保存される。
+コンソールで `__BoxelTest.autoPlay(10)` を直接呼んでもよい。
 
 ### baf_autoplay.json の中身
 - `summary` … `{ng, total, errors}`（NG試合数・総試合・例外数）
