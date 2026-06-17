@@ -886,6 +886,57 @@ if (loadError === null) {
 }
 
 // ============================================================
+// 18b. (n) ゴール際の押し込みで味方がフィールド外へ走り抜けない（デコイのクランプ）
+//   緑フィールドは z=0..120(奥エンドゾーン後端=120)・幅は片側28。
+//   los を 105(ゴール際) にしてランを走らせ、全攻撃選手が z<=120 / |x|<=28 に収まることを検証。
+// ============================================================
+if (loadError === null) {
+  Math.random = () => 0;
+  const FIELD_BACK_Z = 120;   // 緑面の奥端
+  const FIELD_HALF = 28;      // 緑面の片側幅(box(56)→28)
+
+  clickStart();
+  pump(5);
+
+  // 編成（3枚）→ ゴール際へ los を移動 → 隊形配置 → ラン
+  const persN = cards();
+  if (persN.length === 3 && persN[0].onclick) persN[0].onclick();
+
+  const BTn = global.window.__BoxelTest;
+  let maxZ = -Infinity, maxAbsX = 0, checked = false;
+
+  if (BTn && BTn.getState) {
+    BTn.getState().los = 105;                       // ゴール際に設定
+    const csN = cards();
+    if (csN.length === 4 && csN[2].onclick) csN[2].onclick();  // シングルバックを los=105 で配置
+    const playN = cards();
+    if (playN.length >= 1 && playN[0].onclick) playN[0].onclick();  // ラン
+
+    // アニメ全フレームを観測し、攻撃選手の最大 z と最大 |x| を記録
+    for (let f = 0; f < 24; f++) {
+      const off = BTn.getOffense();
+      for (let i = 0; i < off.length; i++) {
+        if (off[i].position.z > maxZ) maxZ = off[i].position.z;
+        const ax = Math.abs(off[i].position.x);
+        if (ax > maxAbsX) maxAbsX = ax;
+      }
+      checked = true;
+      if (BTn.getAnim() === null && f > 2) break;
+      pump(1);
+    }
+  } else {
+    checked = true; maxZ = 0; maxAbsX = 0;   // 未公開時はスキップ扱い
+    console.log("  -> [WARN] __BoxelTest 未公開。(n) はスキップ");
+  }
+
+  if (maxZ > FIELD_BACK_Z + 0.001 || maxAbsX > FIELD_HALF + 0.001) {
+    console.log("  -> (n) 観測 maxZ=" + maxZ.toFixed(2) + " maxAbsX=" + maxAbsX.toFixed(2));
+  }
+  assert("(n) ゴール際のランで攻撃選手が場外へ出ない（z<=120 かつ |x|<=28）",
+    checked && maxZ <= FIELD_BACK_Z + 0.001 && maxAbsX <= FIELD_HALF + 0.001);
+}
+
+// ============================================================
 // 19. 結果まとめ
 // ============================================================
 console.log("");

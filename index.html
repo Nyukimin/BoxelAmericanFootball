@@ -1794,7 +1794,7 @@
         } else if (anim.o.reason === "overthrow") {
           // 届かず: マーカー赤＋受け手は先へ走り抜け、ボールは手前(ballLand)で小さく弾む
           setMarkerColor(0xff3b30);
-          wr.position.z = lerp(anim.wrTarget.z, anim.wrTarget.z + 4, pp2);   // 受け手はさらに前へ
+          wr.position.z = Math.min(GOAL_FAR + 8, lerp(anim.wrTarget.z, anim.wrTarget.z + 4, pp2));   // 受け手はさらに前へ（場外には出ない）
           wr.position.y = Math.abs(Math.sin(pp2 * 12)) * 0.18;
           var oy = Math.abs(Math.sin(pp2 * Math.PI * 2)) * (1 - pp2) * 1.2 + 0.3;
           setBall(anim.ballLand.x, anim.ballLand.z, oy);
@@ -1829,10 +1829,12 @@
         if (anim.kind === "pass") off.position.z = off.userData.pz0 - Math.min(p / 0.3, 1) * 6;  // ドロップバック
         else off.position.z = off.userData.pz0 - Math.min(p / 0.4, 1) * 3;                        // ラン: フェイク後に少し下がる
       } else {
-        // 非ターゲットの WR/RB: 斜め前へルートを走る（デコイ）
+        // 非ターゲットの WR/RB: 斜め前へルートを走る（デコイ）。
+        // ゴール際でフィールド外へ走り抜けないよう、前進量(z)と横幅(x)をフィールド内にクランプする。
+        // 奥エンドゾーン後端は z=120。手前に余裕を持たせ GOAL_FAR+8(=118) を上限にする。
         var dir = (off.userData.px0 >= 0) ? 1 : -1;
-        off.position.z = off.userData.pz0 + p * 16;
-        off.position.x = off.userData.px0 + dir * p * 6;
+        off.position.z = Math.min(GOAL_FAR + 8, off.userData.pz0 + p * 16);
+        off.position.x = Math.max(-FIELD_HALF_W, Math.min(FIELD_HALF_W, off.userData.px0 + dir * p * 6));
         off.position.y = Math.abs(Math.sin(p * 16)) * 0.18;
         off.rotation.y = Math.atan2(dir * 6, 16);
       }
