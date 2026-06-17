@@ -1253,11 +1253,13 @@
     // 再現モードが有効なら、同じシードで乱数を巻き戻してから開始（試合を決定論的に再現可能）。
     if (replaySeed != null) enableReplay(replaySeed);
     sysLog = []; sysSeq = 0;
-    logSys({ ev: "gameStart", seed: replaySeed });
     state.home = 0; state.away = 0; state.drive = 0;
     state.down = 1; state.toGo = 10; state.los = 40; state.formation = null; state.phase = "formation";
     state.mode = "offense"; state.cpuStyle = null;
     state.quarter = 1; state.clock = QUARTER_LENGTH;
+    // gameStart は state をQ1/満タンクロックへリセットした後に記録する
+    // （前の試合の quarter/clock を引き継いで誤記録しないため。連続自動プレー時に効く）
+    logSys({ ev: "gameStart", seed: replaySeed });
     state.timeoutsHome = 3; state.timeoutsAway = 3; state.twoMinWarned = false;
     state.clockStopped = false; state.gameEnded = false;
     state.hashX = 0; state.fwdPassUsed = false;
