@@ -2057,6 +2057,105 @@
     if (pinfo) pinfo.onclick = hidePlayerInfo;
   })();
 
+  // ===== 自動プレー（実ブラウザで N 試合をランダムにプレーし、ログをファイルへ保存）=====
+  // 一部環境(Apple Silicon)で Playwright/Chromium が起動時にクラッシュするため、外部自動操作に
+  // 頼らず「ページ自身」が自動プレーする。URL に ?autoplay=10 を付けて開くか autoPlay(10) を呼ぶ。
+  // 各試合は seed=1..N の再現モードで実行（後から同seedで再現可能）。アニメは turbo で短縮（結果は不変）。
+  // 完了時に baf_autoplay.json（全試合の sysLog＋状態＋例外）をダウンロードする。
+  function autoPlay(nGames, opts) {
+    opts = opts || {};
+    nGames = nGames || 10;
+    var turbo = opts.turbo || 0.08;
+    var maxSteps = opts.maxSteps || 8000;
+    var cur = 0;
+    var out = { games: nGames, turbo: turbo, ua: (typeof navigator !== "undefined" ? navigator.userAgent : ""), errors: [], results: [] };
+    window.__AUTOPLAY = out;
+    var prevOnerror = (typeof window !== "undefined") ? window.onerror : null;
+    if (typeof window !== "undefined") {
+      window.onerror = function (m, src, ln, col) { out.errors.push({ game: cur, msg: String(m), ln: ln || 0 }); return false; };
+    }
+    var $ = function (id) { return document.getElementById(id); };
+    function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+    // 試合ごとに独立な決定論ドライバRNG（操作選択用。ゲーム本体の gameRng とは別系列）
+    function driverRng(seed) { return mulberry32((Math.imul(seed, 2654435761) ^ 0x9e3779b9) >>> 0); }
+
+    async function playGame(seed) {
+      cur = seed;
+      enableReplay(seed);
+      $("start").style.display = "none";
+      resetGame();
+      var drv = driverRng(seed);
+      var steps = 0, errBefore = out.errors.length, stuck = 0;
+      var lastClock = null, lastQ = null;
+      var anomalies = [];
+      while (steps < maxSteps) {
+        if (state.gameEnded) break;
+        // 軽い不変条件チェック（詳細は sysLog 側で解析）
+        if (state.mode === "offense" && state.down && !(state.down >= 1 && state.down <= 4)) {
+          anomalies.push("down範囲外 down=" + state.down + " q=" + state.quarter);
+        }
+        if (lastQ !== null && state.quarter === lastQ && lastClock !== null && state.clock > lastClock + 1.0) {
+          anomalies.push("clock増加 " + Math.round(lastClock) + "->" + Math.round(state.clock) + " Q" + state.quarter);
+        }
+        lastQ = state.quarter; lastClock = state.clock;
+
+        var tap = $("tapNext");
+        if (tap && tap.style.display === "block") {
+          if (tap.onclick) { try { tap.onclick(); } catch (e) { out.errors.push({ game: seed, msg: "tap " + e.message }); } }
+          await sleep(6); steps++; stuck = 0; continue;
+        }
+        var cs = $("cards").children;
+        if (cs.length > 0) {
+          var i = Math.floor(drv() * cs.length) % cs.length;
+          var card = cs[i];
+          if (card && card.onclick) { try { card.onclick(); } catch (e) { out.errors.push({ game: seed, msg: "card " + e.message }); } }
+          await sleep(14); steps++; stuck = 0; continue;
+        }
+        // カードもタップも無い＝アニメ中。少し待つ。
+        await sleep(16); steps++; stuck++;
+        if (stuck > 1500) { out.errors.push({ game: seed, msg: "stuck(進行不能)" }); break; }
+      }
+      var sj = null;
+      try { sj = JSON.parse(sysLogJSON()); } catch (e) { out.errors.push({ game: seed, msg: "sysLogParse " + e.message }); }
+      return {
+        seed: seed, steps: steps, ended: !!state.gameEnded,
+        home: state.home, away: state.away, quarter: state.quarter,
+        anomalies: anomalies.slice(0, 10),
+        newErrors: out.errors.length - errBefore,
+        sysLog: sj
+      };
+    }
+
+    (async function () {
+      animTurbo = turbo;
+      for (var s = 1; s <= nGames; s++) {
+        setBubble("自動プレー中… " + s + "/" + nGames + " 試合");
+        try { out.results.push(await playGame(s)); }
+        catch (e) {
+          out.results.push({ seed: s, ended: false, fatal: String((e && e.message) || e) });
+          out.errors.push({ game: s, msg: "fatal " + e });
+        }
+        await sleep(10);
+      }
+      animTurbo = 1;
+      if (typeof window !== "undefined") window.onerror = prevOnerror;
+      var ng = out.results.filter(function (r) { return !r.ended || r.fatal || (r.newErrors || 0) > 0 || (r.anomalies && r.anomalies.length); }).length;
+      out.summary = { ng: ng, total: nGames, errors: out.errors.length };
+      // ファイルへ保存（ダウンロード）
+      try {
+        var blob = new Blob([JSON.stringify(out)], { type: "application/json" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "baf_autoplay.json";
+        document.body.appendChild(a); a.click();
+        setTimeout(function () { try { document.body.removeChild(a); } catch (e) {} }, 1500);
+      } catch (e) { out.errors.push({ game: 0, msg: "download " + e.message }); }
+      setBubble("自動" + nGames + "試合 完了。NG=" + ng + " / 例外=" + out.errors.length + "。<b>baf_autoplay.json</b> を保存しました（ダウンロードフォルダ）。");
+      if (typeof console !== "undefined" && console.log) console.log("[AUTOPLAY DONE]", out.summary, out);
+    })();
+    return "autoplay started: " + nGames + " games";
+  }
+
   // テスト用: offense/defense/carrier/anim を window.__BoxelTest に公開
   window.__BoxelTest = {
     getOffense: function () { return offense; },
@@ -2070,10 +2169,18 @@
     enableReplay: function (seed) { enableReplay(seed); },
     disableReplay: function () { disableReplay(); },
     isGameOver: function () { return !!state.gameEnded; },
-    setTurbo: function (f) { animTurbo = (f > 0) ? f : 1; }
+    setTurbo: function (f) { animTurbo = (f > 0) ? f : 1; },
+    autoPlay: function (n, opts) { return autoPlay(n, opts); }
   };
 
   init();
+  // URL に ?autoplay=N があれば自動プレーを開始（実ブラウザのみ。ヘッドレスは location 無しでスキップ）。
+  try {
+    if (typeof location !== "undefined" && location.search) {
+      var _ap = new URLSearchParams(location.search).get("autoplay");
+      if (_ap != null) autoPlay(parseInt(_ap, 10) || 10);
+    }
+  } catch (e) { if (typeof console !== "undefined") console.warn("autoplay trigger skipped", e); }
 })();
 </script>
 </body>
