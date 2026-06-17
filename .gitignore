@@ -8,6 +8,10 @@
 tests/e2e/logs/
 tests/e2e/screenshots/
 
+# Python キャッシュ
+__pycache__/
+*.pyc
+
 # 一般ログ
 logs/
 *.log
