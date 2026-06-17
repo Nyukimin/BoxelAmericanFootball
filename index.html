@@ -986,18 +986,18 @@
   // setActiveUnits("special") 済みであること。kickZ=ボールのある縦位置（LOS相当）。
   // kickerIsHome=true なら home特殊がキック側（手前）に並ぶ。
   function placeSpecialFormation(kickZ, kickerIsHome) {
-    var kicking = offense;   // special モードでは offense=homeSpec / defense=awaySpec
-    var receiving = defense;
-    var kickDir = kickerIsHome ? 1 : -1;            // home は +z 方向へ蹴る
-    for (var i = 0; i < kicking.length; i++) {
-      var kx = (kicking.length > 1) ? (i * (40 / (kicking.length - 1)) - 20) : 0;
-      kicking[i].position.set(kx, 0, kickZ - kickDir * 1.5);
-      kicking[i].rotation.set(0, kickerIsHome ? 0 : Math.PI, 0);
+    // 自軍(home=offense=homeSpec)は常に手前(低z)、相手(away=defense=awaySpec)は奥(高z)に固定。
+    // 通常プレーと同じ向き（誰が蹴るかで左右の側は入れ替えない）。
+    var home = offense, away = defense;
+    for (var i = 0; i < home.length; i++) {
+      var hx = (home.length > 1) ? (i * (40 / (home.length - 1)) - 20) : 0;
+      home[i].position.set(hx, 0, kickZ - 7);
+      home[i].rotation.set(0, 0, 0);            // 相手(+z)を向く
     }
-    for (var j = 0; j < receiving.length; j++) {
-      var rx = (receiving.length > 1) ? (j * (40 / (receiving.length - 1)) - 20) : 0;
-      receiving[j].position.set(rx, 0, kickZ + kickDir * 14);
-      receiving[j].rotation.set(0, kickerIsHome ? Math.PI : 0, 0);
+    for (var j = 0; j < away.length; j++) {
+      var ax = (away.length > 1) ? (j * (40 / (away.length - 1)) - 20) : 0;
+      away[j].position.set(ax, 0, kickZ + 7);
+      away[j].rotation.set(0, Math.PI, 0);      // 自軍(-z)を向く
     }
   }
 
@@ -2060,7 +2060,10 @@
     getOffense: function () { return offense; },
     getDefense: function () { return defense; },
     getCarrier: function () { return carrier; },
-    getAnim: function () { return anim; }
+    getAnim: function () { return anim; },
+    getState: function () { return state; },
+    getSysLog: function () { return sysLog; },
+    getPlayLog: function () { return playLog; }
   };
 
   init();
