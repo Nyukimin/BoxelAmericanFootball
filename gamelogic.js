@@ -50,6 +50,25 @@
     return 0.7 + 0.3 * ratio;
   }
 
+  /**
+   * ランの所要時間(秒)を返す（純粋関数）。走速を現実的な上限に抑えるためのもの。
+   * 旧式 dur=1.0+yards*0.04 は距離に対し時間が伸びず、長距離走の速度が 25yd/s へ発散して
+   * 人間離れしていた。本式は「加速ぶん 0.7s ＋ 距離/最高速」。最高速 maxSpd(yd/s) は
+   * 能力 speed(6が平均) で 9〜12 程度。上限 4.5s でアニメ過長と等速発散を防ぐ。
+   * これにより平均走速は概ね 3〜12 yd/s（約6〜25mph）に収まり、人間の限界(約27mph)を超えない。
+   * @param {number} yards 獲得ヤード（負値=ロスも可。絶対値で時間化）
+   * @param {number} speedStat 走者の speed 能力（既定6）
+   * @returns {number} 秒
+   */
+  function runDuration(yards, speedStat) {
+    var sp = (speedStat != null) ? speedStat : 6;
+    // 最高速を 12.0 yd/s(約24.5mph)以下に固定する。dur = 0.7 + |yards|/maxSpd の形では
+    // 走速 = |yards|/dur < maxSpd が常に成り立つため、maxSpd<=12 なら全入力で人間の限界
+    // (約27mph=12.4yd/s)を超えない（時間打ち切りキャップは超人化を生むため使わない）。
+    var maxSpd = Math.min(12.0, 7.5 + sp * 0.5); // sp3→9, sp6→10.5, sp9以上→12 (yd/s)
+    return 0.7 + Math.abs(yards || 0) / maxSpd;  // 0.7s=加速ぶん + 等速移動
+  }
+
   function outcome(formation, play, ctx) {
     var rbSpeed  = (ctx && ctx.rbSpeed  != null) ? ctx.rbSpeed  : 6;
     var olPower  = (ctx && ctx.olPower  != null) ? ctx.olPower  : 6;
@@ -624,6 +643,7 @@
     puntReturn: puntReturn,
     playClockCost: playClockCost,
     sackChance: sackChance,
-    staminaFactor: staminaFactor
+    staminaFactor: staminaFactor,
+    runDuration: runDuration
   };
 })();

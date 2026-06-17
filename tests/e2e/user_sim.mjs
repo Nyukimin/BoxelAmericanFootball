@@ -417,8 +417,8 @@ function playResolve(cardIndex = 0) {
   if (cs && cs.length > cardIndex && cs[cardIndex].onclick) {
     cs[cardIndex].onclick();
   }
-  // 最大 120 回 pump して落ち着くのを待つ
-  for (let i = 0; i < 120; i++) {
+  // 最大 200 回 pump して落ち着くのを待つ（長距離ランは走速を現実的に保つぶんアニメが長い）
+  for (let i = 0; i < 200; i++) {
     pump(1);
     const startEl = getElementById("start");
     const startVisible = startEl.style.display !== "none";
