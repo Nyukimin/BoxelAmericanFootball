@@ -1721,13 +1721,13 @@
     fgMeter.t += dt;
     var nEl = _fgo("fgoNeedle");
     if (fgMeter.stage === "aim") {
-      fgMeter.aim = fgMeter.aimCenter + Math.sin(fgMeter.t * 3.0) * fgMeter.aimHalf;
+      fgMeter.aim = fgMeter.aimCenter + Math.sin(fgMeter.t * 1.8) * fgMeter.aimHalf;
       if (nEl) {
         var pct = (fgMeter.aim - fgMeter.dMin) / fgMeter.dRange;
         nEl.style.left = (Math.max(0.03, Math.min(0.97, pct)) * 100).toFixed(1) + "%";
       }
     } else if (fgMeter.stage === "power") {
-      fgMeter.power = 0.5 + 0.5 * Math.sin(fgMeter.t * 3.2);
+      fgMeter.power = 0.5 + 0.5 * Math.sin(fgMeter.t * 2.0);
       if (nEl) nEl.style.left = (Math.max(0.03, Math.min(0.97, fgMeter.power)) * 100).toFixed(1) + "%";
     }
   }
