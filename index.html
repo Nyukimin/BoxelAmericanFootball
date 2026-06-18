@@ -71,12 +71,14 @@
   #playerInfo .pi-role b { color: #ffd166; }
   #playerInfo .pi-stat { font-size: 12px; opacity: .85; margin-top: 5px; }
   #playerInfo .pi-hint { font-size: 10px; opacity: .55; margin-top: 5px; }
-  #fgOverlay { display: none; position: absolute; left: 50%; bottom: 200px; transform: translateX(-50%); width: min(380px, 86vw); background: rgba(18,28,14,.86); border-radius: 14px; padding: 12px 16px 14px; pointer-events: none; }
-  #fgOverlay .fgo-title { font-size: 13px; font-weight: 700; color: #ffe9b8; margin-bottom: 8px; text-align: center; }
-  #fgOverlay .fgo-track { position: relative; height: 26px; background: rgba(255,255,255,.12); border-radius: 13px; overflow: hidden; }
+  #fgOverlay { display: none; position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); width: min(400px, 90vw); background: rgba(18,28,14,.88); border-radius: 16px; padding: 14px 18px 16px; pointer-events: auto; }
+  #fgOverlay .fgo-title { font-size: 14px; font-weight: 700; color: #ffe9b8; margin-bottom: 10px; text-align: center; }
+  #fgOverlay .fgo-track { position: relative; height: 32px; background: rgba(255,255,255,.12); border-radius: 16px; overflow: hidden; }
   #fgOverlay .fgo-good { position: absolute; top: 0; height: 100%; background: rgba(53,199,89,.55); }
   #fgOverlay .fgo-needle { position: absolute; top: 0; width: 8px; height: 100%; background: #ff3b30; border-radius: 4px; margin-left: -4px; box-shadow: 0 0 6px rgba(255,59,48,.6); }
-  #fgOverlay .fgo-labels { display: flex; justify-content: space-between; font-size: 11px; color: rgba(255,255,255,.55); margin-top: 4px; }
+  #fgOverlay .fgo-labels { display: flex; justify-content: space-between; font-size: 11px; color: rgba(255,255,255,.55); margin-top: 5px; }
+  #fgOverlay .fgo-btn { display: block; width: 100%; margin-top: 12px; background: #ee8e3c; color: #fff; border: none; border-radius: 12px; padding: 12px; font-size: 17px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 0 #b9651f; }
+  #fgOverlay .fgo-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #b9651f; }
 </style>
 </head>
 <body>
@@ -163,6 +165,7 @@
     <div class="fgo-needle" id="fgoNeedle"></div>
   </div>
   <div class="fgo-labels" id="fgoLabels"></div>
+  <button class="fgo-btn" id="fgoBtn">決定</button>
 </div>
 
 <div class="hud" id="panel">
@@ -1661,16 +1664,22 @@
   // FGミニゲーム: 狙いメーター→パワーメーターを各1タップで止め、fgResolve で判定する。
   // updateFGMeter(dt) が毎フレームメーター値と画面表示を更新する。
   function _fgo(id) { return (typeof document !== "undefined") && document.getElementById(id); }
-  function _showFGOverlay(title, goodL, goodW, lblLeft, lblRight) {
+  function _showFGOverlay(title, goodL, goodW, lblLeft, lblRight, btnFn) {
     var ov = _fgo("fgOverlay"); if (!ov) return;
     var t = _fgo("fgoTitle"); if (t) t.textContent = title;
     var g = _fgo("fgoGood");
     if (g) { g.style.left = (goodL * 100).toFixed(1) + "%"; g.style.width = (goodW * 100).toFixed(1) + "%"; }
     var n = _fgo("fgoNeedle"); if (n) n.style.left = "50%";
     var l = _fgo("fgoLabels"); if (l) l.innerHTML = "<span>" + lblLeft + "</span><span>" + lblRight + "</span>";
+    var b = _fgo("fgoBtn"); if (b) b.onclick = btnFn;
+    // パネル（吹き出し・カード）を隠してオーバーレイだけ表示
+    var p = _fgo("panel"); if (p) p.style.display = "none";
     ov.style.display = "block";
   }
-  function _hideFGOverlay() { var ov = _fgo("fgOverlay"); if (ov) ov.style.display = "none"; }
+  function _hideFGOverlay() {
+    var ov = _fgo("fgOverlay"); if (ov) ov.style.display = "none";
+    var p = _fgo("panel"); if (p) p.style.display = "";
+  }
   function startFGMinigame(who, kickStat) {
     var xb = state.hashX || 0, zb = state.los;
     var dist = Math.round((GOAL_FAR - zb) + 17);
@@ -1689,15 +1698,13 @@
     };
     // カメラをゴールポスト正面視点に切り替え
     fgView = true; fgViewLos = zb;
-    _showFGOverlay("← 狙い →  中央の緑に止めよう", fgMeter.goodAimL, fgMeter.goodAimR - fgMeter.goodAimL, "左", "右");
-    setBubble(who + " が " + dist + "ヤードのFGを狙う！ まず<b>狙い</b>をタップで止めよう。");
+    _showFGOverlay("← 狙い →  中央の緑に止めよう", fgMeter.goodAimL, fgMeter.goodAimR - fgMeter.goodAimL, "左", "右", stopFGAim);
     setCards([{ ico: "🎯", t: "狙いを止める", d: "中央で止めるほど正確", fn: stopFGAim }]);
   }
   function stopFGAim() {
     if (!fgMeter || fgMeter.stage !== "aim") return;
     fgMeter.stage = "power"; fgMeter.t = 0;
-    _showFGOverlay("パワー  緑ゾーンで止めよう", fgMeter.neededPow, 1 - fgMeter.neededPow, "弱", "強");
-    setBubble("ホイッスル先生：狙い決定！ 次は<b>パワー</b>をタップで止めよう（遠いほど強く！）。");
+    _showFGOverlay("パワー  緑ゾーンで止めよう", fgMeter.neededPow, 1 - fgMeter.neededPow, "弱", "強", stopFGPower);
     setCards([{ ico: "💥", t: "パワーを止める", d: "強すぎても弱すぎてもダメ", fn: stopFGPower }]);
   }
   function stopFGPower() {
