@@ -71,6 +71,11 @@
   #playerInfo .pi-role b { color: #ffd166; }
   #playerInfo .pi-stat { font-size: 12px; opacity: .85; margin-top: 5px; }
   #playerInfo .pi-hint { font-size: 10px; opacity: .55; margin-top: 5px; }
+  #fgMeterEl { display: none; margin: 0 4px 10px; }
+  .fg-lbl { font-size: 12px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.5); margin-bottom: 5px; font-weight: 700; }
+  .fg-track { position: relative; height: 22px; background: rgba(0,0,0,.22); border-radius: 11px; overflow: hidden; }
+  .fg-good { position: absolute; top: 0; height: 100%; background: rgba(53,199,89,.5); }
+  .fg-needle { position: absolute; top: 0; width: 6px; height: 100%; background: #ff3b30; border-radius: 3px; margin-left: -3px; box-shadow: 0 0 5px rgba(0,0,0,.35); }
 </style>
 </head>
 <body>
@@ -154,6 +159,13 @@
   <div class="bubble" id="bubble">ホイッスル先生：まずは隊形を選んでね！</div>
   <div id="tapNext">▶ タップで次へ</div>
   <div id="personnelBtn">↺ 編成を変える</div>
+  <div id="fgMeterEl">
+    <div class="fg-lbl" id="fgMeterLbl"></div>
+    <div class="fg-track">
+      <div class="fg-good" id="fgMeterGood"></div>
+      <div class="fg-needle" id="fgMeterNeedle"></div>
+    </div>
+  </div>
   <div class="cards" id="cards"></div>
 </div>
 
@@ -1642,39 +1654,64 @@
 
   // FGミニゲーム: 狙いメーター→パワーメーターを各1タップで止め、fgResolve で判定する。
   // メーターは animate() ループの updateFGMeter(dt) が駆動する。
+  function _fgMeterEl(id) { return (typeof document !== "undefined") && document.getElementById(id); }
+  function _showFGMeter(lbl, goodLeft, goodWidth) {
+    var wrap = _fgMeterEl("fgMeterEl"); if (!wrap) return;
+    var lEl = _fgMeterEl("fgMeterLbl"); if (lEl) lEl.innerHTML = lbl;
+    var gEl = _fgMeterEl("fgMeterGood");
+    if (gEl) { gEl.style.left = (goodLeft * 100).toFixed(1) + "%"; gEl.style.width = (goodWidth * 100).toFixed(1) + "%"; }
+    var nEl = _fgMeterEl("fgMeterNeedle"); if (nEl) nEl.style.left = "50%";
+    wrap.style.display = "block";
+  }
+  function _hideFGMeter() { var w = _fgMeterEl("fgMeterEl"); if (w) w.style.display = "none"; }
   function startFGMinigame(who, kickStat) {
     var xb = state.hashX || 0, zb = state.los;
     var dist = Math.round((GOAL_FAR - zb) + 17);
     var sw = window.BoxelGame.fgAimSwing(xb, zb);
+    var win = window.BoxelGame.fgAngleWindow(xb, zb);
+    var DISP = 1.3;
+    var dMin = sw.center - sw.half * DISP, dRange = sw.half * 2 * DISP;
+    var gL = Math.max(0, Math.min(1, (win.left  - dMin) / dRange));
+    var gR = Math.max(0, Math.min(1, (win.right - dMin) / dRange));
+    var neededPow = Math.min(0.98, ((120 - zb) + 17) / window.BoxelGame.fgReach(kickStat));
     fgMeter = {
       stage: "aim", t: 0, who: who, kickStat: kickStat, xb: xb, zb: zb,
-      aimCenter: sw.center, aimHalf: sw.half, aim: sw.center,
-      power: 0
+      aimCenter: sw.center, aimHalf: sw.half, aim: sw.center, power: 0,
+      dMin: dMin, dRange: dRange, neededPow: neededPow
     };
+    _showFGMeter("狙い ← 中央が正確 →", gL, gR - gL);
     setBubble(who + " が " + dist + "ヤードのFGを狙う！ まず<b>狙い</b>をタップで止めよう。");
     setCards([{ ico: "🎯", t: "狙いを止める", d: "中央で止めるほど正確", fn: stopFGAim }]);
   }
   function stopFGAim() {
     if (!fgMeter || fgMeter.stage !== "aim") return;
     fgMeter.stage = "power"; fgMeter.t = 0;
+    _showFGMeter("パワー（緑ゾーンで止めよう）", fgMeter.neededPow, 1 - fgMeter.neededPow);
     setBubble("ホイッスル先生：狙い決定！ 次は<b>パワー</b>をタップで止めよう（遠いほど強く！）。");
     setCards([{ ico: "💥", t: "パワーを止める", d: "強すぎても弱すぎてもダメ", fn: stopFGPower }]);
   }
   function stopFGPower() {
     if (!fgMeter || fgMeter.stage !== "power") return;
     var m = fgMeter; fgMeter = null; setCards([]);
+    _hideFGMeter();
     var res = window.BoxelGame.fgResolve({ aim: m.aim, power: m.power, xb: m.xb, zb: m.zb, kickStat: m.kickStat });
     state.phase = "animating";
     resolveFGResult(res.success, res.reason);
   }
-  // メーター進行（aim は左右に振れ、power は 0→1 を往復）。タップ時点の値を fgMeter に確定。
+  // メーター進行（aim は左右に振れ、power は 0→1 を往復）。タップ時点の値と針表示を更新。
   function updateFGMeter(dt) {
     if (!fgMeter) return;
     fgMeter.t += dt;
+    var nEl = _fgMeterEl("fgMeterNeedle");
     if (fgMeter.stage === "aim") {
       fgMeter.aim = fgMeter.aimCenter + Math.sin(fgMeter.t * 3.0) * fgMeter.aimHalf;
+      if (nEl) {
+        var pct = (fgMeter.aim - fgMeter.dMin) / fgMeter.dRange;
+        nEl.style.left = (Math.max(0.03, Math.min(0.97, pct)) * 100).toFixed(1) + "%";
+      }
     } else if (fgMeter.stage === "power") {
       fgMeter.power = 0.5 + 0.5 * Math.sin(fgMeter.t * 3.2);   // 0..1 を往復
+      if (nEl) nEl.style.left = (Math.max(0.03, Math.min(0.97, fgMeter.power)) * 100).toFixed(1) + "%";
     }
   }
 
