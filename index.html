@@ -174,7 +174,7 @@
   var clock;
 
   var GOAL_NEAR = 10, GOAL_FAR = 110, MAX_DRIVES = 6;
-  var QUARTER_LENGTH = 90;   // クォーターあたりの秒数（テスト用短縮値）
+  var QUARTER_LENGTH = 240;  // クォーターあたりの秒数
   var TWO_MIN_WARN = 30;     // 2分警告のしきい値（秒）
   var state = {
     los: 40, toGo: 10, down: 1, home: 0, away: 0, drive: 0,
@@ -182,7 +182,7 @@
     mode: "offense", cpuStyle: null, defLos: 40, defPin: 0,
     oppLos: 40, oppDown: 1, oppToGo: 10, defFront: "balanced",
     personnel: "balanced",
-    quarter: 1, clock: 90, timeoutsHome: 3, timeoutsAway: 3, twoMinWarned: false,
+    quarter: 1, clock: 240, timeoutsHome: 3, timeoutsAway: 3, twoMinWarned: false,
     clockStopped: false, gameEnded: false,
     hashX: 0,                  // ボールの横位置（ハッシュ）。-6=左 / 0=中央 / +6=右
     fwdPassUsed: false         // この1ダウンで前方パスを既に使ったか（イリーガル判定用）
