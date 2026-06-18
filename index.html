@@ -1687,13 +1687,14 @@
     var win = window.BoxelGame.fgAngleWindow(xb, zb);
     var DISP = 1.3;
     var dMin = sw.center - sw.half * DISP, dRange = sw.half * 2 * DISP;
-    var neededPow = Math.min(0.95, ((GOAL_FAR - zb) + 17) / window.BoxelGame.fgReach(kickStat));
+    var AIM_TOL = 0.05, POWER_BUF = 0.10;   // fgResolve と一致させる
+    var neededPow = Math.max(0.05, Math.min(0.92, ((GOAL_FAR - zb) + 17) / window.BoxelGame.fgReach(kickStat) - POWER_BUF));
     fgMeter = {
       stage: "aim", t: 0, who: who, kickStat: kickStat, xb: xb, zb: zb,
       aimCenter: sw.center, aimHalf: sw.half, aim: sw.center, power: 0,
       dMin: dMin, dRange: dRange,
-      goodAimL: Math.max(0, Math.min(1, (win.left  - dMin) / dRange)),
-      goodAimR: Math.max(0, Math.min(1, (win.right - dMin) / dRange)),
+      goodAimL: Math.max(0, Math.min(1, (win.left  - AIM_TOL - dMin) / dRange)),
+      goodAimR: Math.max(0, Math.min(1, (win.right + AIM_TOL - dMin) / dRange)),
       neededPow: neededPow
     };
     // カメラをゴールポスト正面視点に切り替え

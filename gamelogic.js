@@ -259,16 +259,16 @@
     var zb       = opts.zb;
     var kickStat = opts.kickStat;
 
-    // 飛距離チェック
+    // 飛距離チェック（パワー 0.10 分の余裕を加味）
     var dist   = (120 - zb) + 17;
     var needed = dist / fgReach(kickStat);
-    if (power < needed) {
+    if (power < needed - 0.10) {
       return { success: false, reason: "short" };
     }
 
-    // 左右チェック
+    // 左右チェック（ゴールポスト幅 ± 0.05 rad の余裕）
     var win = fgAngleWindow(xb, zb);
-    var tol = 0.01 * (kickStat / 6);
+    var tol = 0.05;
     if (aim < win.left - tol) {
       return { success: false, reason: "wideLeft" };
     }
