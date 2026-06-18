@@ -1161,7 +1161,7 @@
   function animateFGKick(targetZ, success, onDone) {
     var startX = 0, startZ = state.los;
     var endX = success ? 0 : (gameRng() < 0.5 ? 8 : -8);   // 失敗はアップライト外へ外れる
-    fgKick = { t: 0, dur: 1.0, startX: startX, startZ: startZ, endX: endX, endZ: targetZ,
+    fgKick = { t: 0, dur: 1.5, startX: startX, startZ: startZ, endX: endX, endZ: targetZ,
                success: success, onDone: onDone };
     setMarkerColor(success ? 0x35c759 : 0xff3b30);
     setBall(startX, startZ, 1.4);
@@ -1173,7 +1173,7 @@
     var p = Math.min(1, fgKick.t / fgKick.dur);
     var x = lerp(fgKick.startX, fgKick.endX, p);
     var z = lerp(fgKick.startZ, fgKick.endZ, p);
-    var y = 1.4 + Math.sin(p * Math.PI) * 9;   // 弧を描く（高く上がって落ちる）
+    var y = 1.4 + p * (1 - p * 0.4) * 16;   // 急上昇してゴールポスト付近（y≈11）を通過
     setBall(x, z, y);
     if (p >= 1) {
       var cb = fgKick.onDone; fgKick = null; if (cb) cb();
