@@ -2261,7 +2261,17 @@
     disableReplay: function () { disableReplay(); },
     isGameOver: function () { return !!state.gameEnded; },
     setTurbo: function (f) { animTurbo = (f > 0) ? f : 1; },
-    autoPlay: function (n, opts) { return autoPlay(n, opts); }
+    autoPlay: function (n, opts) { return autoPlay(n, opts); },
+    testFG: function (los) {
+      // FGミニゲームを直接起動する（デバッグ用）。los 省略時は 80（40ヤードFG相当）
+      var _los = (los != null) ? los : 80;
+      document.getElementById("start").style.display = "none";
+      state.quarter = 1; state.clock = QUARTER_LENGTH; state.down = 4; state.los = _los;
+      state.toGo = 10; state.home = 0; state.away = 0; state.gameEnded = false;
+      state.mode = "offense"; state.phase = "formation";
+      setActiveUnits("offense"); placeFormation("balanced");
+      kickPlay("fg");
+    }
   };
 
   init();
