@@ -298,12 +298,58 @@
     return m;
   }
 
+  function traverseObject(root, fn) {
+    if (!root) return;
+    if (root.traverse) { root.traverse(fn); return; }
+    fn(root);
+    if (!root.children) return;
+    for (var i = 0; i < root.children.length; i++) traverseObject(root.children[i], fn);
+  }
+
+  function isLambertMaterial(material) {
+    if (material && material.length != null && typeof material !== "string") {
+      for (var i = 0; i < material.length; i++) {
+        if (isLambertMaterial(material[i])) return true;
+      }
+      return false;
+    }
+    return material && THREE.MeshLambertMaterial && material instanceof THREE.MeshLambertMaterial;
+  }
+
+  function fixSRGBMaterialColor(material, force) {
+    if (!material) return;
+    if (material.length != null && typeof material !== "string") {
+      for (var i = 0; i < material.length; i++) fixSRGBMaterialColor(material[i], force);
+      return;
+    }
+    if (!material.color || !material.color.convertSRGBToLinear) return;
+    if (!material.userData) material.userData = {};
+    if (!force && material.userData.srgbFixed) return;
+    material.color.convertSRGBToLinear();
+    material.userData.srgbFixed = true;
+  }
+
+  function prepModel(root) {
+    traverseObject(root, function (obj) {
+      if (!obj || !obj.material) return;
+      if (isLambertMaterial(obj.material)) obj.castShadow = true;
+      fixSRGBMaterialColor(obj.material, false);
+    });
+    return root;
+  }
+
+  function linearColor(hex) {
+    var color = new THREE.Color(hex);
+    if (color.convertSRGBToLinear) color.convertSRGBToLinear();
+    return color;
+  }
+
   function makeBall() {
     var g = new THREE.Group();
     var b = new THREE.Mesh(new THREE.SphereGeometry(0.42, 16, 12), new THREE.MeshLambertMaterial({ color: 0x8b5a2b }));
     b.scale.set(1, 0.7, 0.62); g.add(b);
     g.add(box(0.04, 0.5, 0.04, 0xffffff, 0, 0, 0));
-    return g;
+    return prepModel(g);
   }
 
   function makeMarker() {
@@ -315,7 +361,7 @@
     var arrow = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.6, 4), new THREE.MeshBasicMaterial({ color: 0xff8c1a }));
     arrow.rotation.x = Math.PI; arrow.position.y = 2.4; g.userData = { arrow: arrow }; g.add(arrow);
     g.userData.arrow = arrow;
-    return g;
+    return prepModel(g);
   }
 
   // 目指すべき到達ライン（ファーストダウンの line to gain）。実況の黄色ラインを上品に。
@@ -332,7 +378,7 @@
     var poleMat = new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.85 });
     var pl = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.2, 0.16), poleMat); pl.position.set(-27.5, 1.1, 0); g.add(pl);
     var pr = new THREE.Mesh(new THREE.BoxGeometry(0.16, 2.2, 0.16), poleMat); pr.position.set(27.5, 1.1, 0); g.add(pr);
-    return g;
+    return prepModel(g);
   }
 
   // 到達ラインを現在の状況（攻撃=los+toGo / 守備=相手のoppLos-oppToGo）に合わせて配置
@@ -347,15 +393,17 @@
 
   function field() {
     var g = new THREE.Group();
-    g.add(box(56, 0.2, 120, 0x4f9d4f, 0, 0, 60));
-    var ezA = box(56, 0.22, 10, 0xd9622b, 0, 0.01, 5); g.add(ezA);
-    var ezB = box(56, 0.22, 10, 0x3f7fd0, 0, 0.01, 115); g.add(ezB);
+    var mainTurf = box(56, 0.2, 120, 0x4f9d4f, 0, 0, 60); mainTurf.receiveShadow = true; g.add(mainTurf);
+    var ezA = box(56, 0.22, 10, 0xd9622b, 0, 0.01, 5); ezA.receiveShadow = true; g.add(ezA);
+    var ezB = box(56, 0.22, 10, 0x3f7fd0, 0, 0.01, 115); ezB.receiveShadow = true; g.add(ezB);
     for (var y = 10; y <= 110; y += 5) {
       var line = box(54, 0.24, 0.35, 0xffffff, 0, 0.02, y);
+      line.receiveShadow = true;
       g.add(line);
     }
     for (var s = 0; s <= 120; s += 4) {
-      g.add(box(60, 0.2, 4, (Math.floor(s / 4) % 2 ? 0x4f9d4f : 0x55a755), 0, -0.01, s + 2));
+      var stripe = box(60, 0.2, 4, (Math.floor(s / 4) % 2 ? 0x4f9d4f : 0x55a755), 0, -0.01, s + 2);
+      stripe.receiveShadow = true; g.add(stripe);
     }
     // H型ゴールポスト（両エンドゾーン後方）
     var postMat = new THREE.MeshLambertMaterial({ color: 0xffd700 });
@@ -375,7 +423,7 @@
     postL2.position.set(-6, 9.8, 112); g.add(postL2);
     var postR2 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 5, 8), postMat);
     postR2.position.set(6, 9.8, 112); g.add(postR2);
-    return g;
+    return prepModel(g);
   }
 
   function placeFormation(formation) {
@@ -479,7 +527,10 @@
     if (!ballMarker || !ballMarker.children) return;
     for (var i = 0; i < ballMarker.children.length && i < 2; i++) {
       var m = ballMarker.children[i].material;
-      if (m && m.color && m.color.set) m.color.set(hex);
+      if (m && m.color && m.color.set) {
+        m.color.set(hex);
+        fixSRGBMaterialColor(m, true);
+      }
     }
   }
 
@@ -2031,10 +2082,16 @@
 
   function init() {
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xbfe3f2);
+    scene.background = linearColor(0xbfe3f2);
     scene.fog = new THREE.Fog(0xbfe3f2, 80, 200);
+    if (scene.fog && scene.fog.color && scene.fog.color.convertSRGBToLinear) scene.fog.color.convertSRGBToLinear();
     camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 300);
     renderer = new THREE.WebGLRenderer({ canvas: document.getElementById("c"), antialias: true, logarithmicDepthBuffer: true });
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    if (renderer.setClearColor) renderer.setClearColor(linearColor(0xbfe3f2));
+    if (!renderer.shadowMap) renderer.shadowMap = {};
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
     renderer.setSize(window.innerWidth, window.innerHeight);
 
@@ -2044,29 +2101,49 @@
       renderer.domElement.addEventListener("pointerdown", onPointerDown);
     }
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.75));
-    var sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(20, 50, -10); scene.add(sun);
-    scene.add(field());
-    firstDownLine = makeFirstDownMarker(); scene.add(firstDownLine);
+    var hemi = THREE.HemisphereLight
+      ? new THREE.HemisphereLight(0xbfe3f2, 0x3f8f45, 0.62)
+      : new THREE.AmbientLight(0xffffff, 0.62);
+    scene.add(hemi);
+    var sun = new THREE.DirectionalLight(0xffffff, 0.68);
+    sun.position.set(-45, 50, 20);
+    sun.castShadow = true;
+    if (!sun.shadow) sun.shadow = {};
+    if (!sun.shadow.mapSize) sun.shadow.mapSize = {};
+    sun.shadow.mapSize.width = 2048;
+    sun.shadow.mapSize.height = 2048;
+    if (!sun.shadow.camera) sun.shadow.camera = {};
+    sun.shadow.camera.left = -90;
+    sun.shadow.camera.right = 90;
+    sun.shadow.camera.top = 90;
+    sun.shadow.camera.bottom = -90;
+    sun.shadow.camera.near = 1;
+    sun.shadow.camera.far = 250;
+    if (sun.shadow.camera.updateProjectionMatrix) sun.shadow.camera.updateProjectionMatrix();
+    sun.shadow.bias = -0.0005;
+    scene.add(sun);
+    scene.add(prepModel(field()));
+    firstDownLine = prepModel(makeFirstDownMarker()); scene.add(firstDownLine);
 
     // 4ユニット(計44体)を生成してすべて scene に追加
-    BC.OFFENSE.forEach(function (c) { var a = BC.makePlayer(c, BC.TEAM.home); homeOff.push(a); scene.add(a); });
-    BC.DEFENSE.forEach(function (c) { var b = BC.makePlayer(c, BC.TEAM.away); awayDef.push(b); scene.add(b); });
-    BC.HOME_DEFENSE.forEach(function (c) { var b = BC.makePlayer(c, BC.TEAM.home); homeDef.push(b); scene.add(b); });
-    BC.AWAY_OFFENSE.forEach(function (c) { var a = BC.makePlayer(c, BC.TEAM.away); awayOff.push(a); scene.add(a); });
-    BC.HOME_SPECIAL.forEach(function (c) { var a = BC.makePlayer(c, BC.TEAM.home); homeSpec.push(a); scene.add(a); });
-    BC.AWAY_SPECIAL.forEach(function (c) { var b = BC.makePlayer(c, BC.TEAM.away); awaySpec.push(b); scene.add(b); });
+    BC.OFFENSE.forEach(function (c) { var a = prepModel(BC.makePlayer(c, BC.TEAM.home)); homeOff.push(a); scene.add(a); });
+    BC.DEFENSE.forEach(function (c) { var b = prepModel(BC.makePlayer(c, BC.TEAM.away)); awayDef.push(b); scene.add(b); });
+    BC.HOME_DEFENSE.forEach(function (c) { var b = prepModel(BC.makePlayer(c, BC.TEAM.home)); homeDef.push(b); scene.add(b); });
+    BC.AWAY_OFFENSE.forEach(function (c) { var a = prepModel(BC.makePlayer(c, BC.TEAM.away)); awayOff.push(a); scene.add(a); });
+    BC.HOME_SPECIAL.forEach(function (c) { var a = prepModel(BC.makePlayer(c, BC.TEAM.home)); homeSpec.push(a); scene.add(a); });
+    BC.AWAY_SPECIAL.forEach(function (c) { var b = prepModel(BC.makePlayer(c, BC.TEAM.away)); awaySpec.push(b); scene.add(b); });
     // 初期は攻撃フェーズ（homeOff/awayDef をオンフィールドに。特殊ユニットは非表示）
     setActiveUnits("offense");
 
-    ball = makeBall(); scene.add(ball);
-    ballMarker = makeMarker(); scene.add(ballMarker);
-    manager = BC.makeManager(BC.MANAGER); manager.position.set(-32, 0, 56); scene.add(manager);
+    ball = prepModel(makeBall()); scene.add(ball);
+    ballMarker = prepModel(makeMarker()); scene.add(ballMarker);
+    manager = prepModel(BC.makeManager(BC.MANAGER)); manager.position.set(-32, 0, 56); scene.add(manager);
 
     var tg = new THREE.BufferGeometry();
     tg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(50 * 3), 3));
     trail = new THREE.Line(tg, new THREE.LineBasicMaterial({ color: 0xffe14d, transparent: true, opacity: 0.7 }));
-    scene.add(trail);
+    scene.add(prepModel(trail));
+    prepModel(scene);
 
     placeFormation("single");
     camPos.set(30, 38, state.los - 32); camTarget.set(0, 0, state.los);
