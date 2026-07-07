@@ -472,90 +472,132 @@
     return tex;
   }
 
-  function makeCrowdTexture() {
+  function makeCrowdTexture(seed) {
     if (!canDrawCanvasTexture()) return null;
-    var colors = ["#e85d75", "#f2c14e", "#6fcf97", "#56ccf2", "#9b7ede", "#f2994a", "#ffffff", "#2f80ed", "#27ae60", "#eb5757"];
-    var tex = makeCanvasTexture(256, 64, function (ctx, w, h) {
-      ctx.fillStyle = "#25262b";
+    var seatBacks = ["#6f8fb5", "#879bb8", "#9aa3ad", "#8fa7b6", "#a4a8ad"];
+    var shirts = ["#ff8fa3", "#ffd166", "#7ee6a7", "#75d7ff", "#c9a7ff", "#ffb36b", "#f7f7f2", "#80c8ff", "#ff9f9a"];
+    var heads = ["#f1c7a8", "#d7a279", "#9b6a4d", "#f0d1b2", "#4a352f"];
+    var tex = makeCanvasTexture(128, 16, function (ctx, w, h) {
+      ctx.fillStyle = seatBacks[seed % seatBacks.length];
       ctx.fillRect(0, 0, w, h);
-      for (var y = 4; y < h - 6; y += 10) {
-        for (var x = 4; x < w - 6; x += 10) {
-          if (((x * 13 + y * 17) % 7) === 0) continue;
-          var idx = (x * 7 + y * 11 + Math.floor(x / 10) * 3) % colors.length;
-          ctx.fillStyle = colors[idx];
-          ctx.fillRect(x, y, 8, 8);
-        }
+      for (var x = 1 + (seed % 4); x < w - 11; x += 12) {
+        var r = (x * 31 + seed * 17) % 10;
+        if (r >= 8) continue;
+        var y = 2 + ((x + seed) % 2);
+        ctx.fillStyle = heads[(x + seed) % heads.length];
+        ctx.fillRect(x + 3, y, 4, 3);
+        ctx.fillStyle = shirts[(x * 7 + seed * 5) % shirts.length];
+        ctx.fillRect(x + 1, y + 3, 8, 8);
+        ctx.fillRect(x, y + 6, 10, 4);
       }
     });
     if (THREE.RepeatWrapping) {
       tex.wrapS = THREE.RepeatWrapping;
       tex.wrapT = THREE.RepeatWrapping;
     }
-    if (THREE.NearestFilter) tex.magFilter = THREE.NearestFilter;
+    if (THREE.NearestFilter) {
+      tex.magFilter = THREE.NearestFilter;
+      tex.minFilter = THREE.NearestFilter;
+    }
     return tex;
   }
 
   function makeStadiumEnvironment() {
     var g = new THREE.Group();
-    var crowdTex = makeCrowdTexture();
-    var concreteColors = [0xb9b4aa, 0xaaa59c, 0x9d9992];
     var fieldLen = 130;
     var fieldWid = 56;
+    var rise = 0.9;
+    var tread = 1.6;
+    var sideRows = 7;
+    var endRows = 4;
+    var concreteMat = new THREE.MeshLambertMaterial({ color: 0xa89f94 });
+    var seatMat = new THREE.MeshLambertMaterial({ color: 0xb9bfc6 });
+    var wallMat = new THREE.MeshLambertMaterial({ color: 0xf4f4f2 });
+    var homeLineMat = new THREE.MeshLambertMaterial({ color: 0x2f73c8 });
+    var awayLineMat = new THREE.MeshLambertMaterial({ color: 0x3f7fd0 });
     var apron = new THREE.Mesh(
       new THREE.BoxGeometry(fieldWid + 140, 0.1, 120 + 150),
       new THREE.MeshLambertMaterial({ color: 0x3f7e3f })
     );
     apron.position.set(0, -0.1, 60);
-    apron.receiveShadow = true;
+    apron.castShadow = false;
+    apron.receiveShadow = false;
     g.add(apron);
 
-    function crowdMaterial(faceWorldLength, faceWorldHeight) {
+    function crowdMaterial(faceWorldLength, faceWorldHeight, seed) {
+      var crowdTex = makeCrowdTexture(seed);
       var mat = new THREE.MeshLambertMaterial({
         color: 0xffffff,
         map: crowdTex || null
       });
-      if (mat.map && mat.map.clone) {
-        mat.map = mat.map.clone();
+      if (mat.map) {
         if (THREE.RepeatWrapping) {
           mat.map.wrapS = THREE.RepeatWrapping;
           mat.map.wrapT = THREE.RepeatWrapping;
         }
-        mat.map.repeat.set(Math.max(1, faceWorldLength / 32), Math.max(1, faceWorldHeight / 8));
+        if (mat.map.repeat && mat.map.repeat.set) mat.map.repeat.set(Math.max(1, faceWorldLength / 12), Math.max(1, faceWorldHeight / 0.9));
         mat.map.needsUpdate = true;
       }
       return mat;
     }
 
-    function standMaterials(tier, crowdFace, faceLen, faceH) {
-      var concrete = new THREE.MeshLambertMaterial({ color: concreteColors[tier % concreteColors.length] });
-      var crowd = crowdMaterial(faceLen, faceH);
-      var mats = [concrete, concrete, concrete, concrete, concrete, concrete];
-      mats[2] = crowd;
+    function stepMaterials(crowdFace, faceLen, faceH, seed) {
+      var crowd = crowdMaterial(faceLen, faceH, seed);
+      var mats = [concreteMat, concreteMat, seatMat, concreteMat, concreteMat, concreteMat];
       mats[crowdFace] = crowd;
       return mats;
     }
 
-    function addStand(w, h, d, x, y, z, tier, crowdFace, faceLen, faceH) {
-      var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), standMaterials(tier, crowdFace, faceLen, faceH));
+    function addBox(w, h, d, x, y, z, mat) {
+      var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
       m.position.set(x, y, z);
-      m.receiveShadow = true;
+      m.castShadow = false;
+      m.receiveShadow = false;
       g.add(m);
+      return m;
     }
 
-    for (var t = 0; t < 3; t++) {
-      var h = 2.2;
-      var y = t * 2.2 + h / 2;
-      var innerOffset = 14 + t * 4;
-      addStand(4, h, fieldLen, -28 - innerOffset - 2, y, 60, t, 0, fieldLen, h);
-      addStand(4, h, fieldLen, 28 + innerOffset + 2, y, 60, t, 1, fieldLen, h);
+    function addStep(w, h, d, x, y, z, crowdFace, faceLen, seed) {
+      var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), stepMaterials(crowdFace, faceLen, h, seed));
+      m.position.set(x, y, z);
+      m.castShadow = false;
+      m.receiveShadow = false;
+      g.add(m);
+      return m;
     }
-    for (var e = 0; e < 2; e++) {
-      var eh = 2.2;
-      var ey = e * 2.2 + eh / 2;
-      addStand(fieldWid + 10, eh, 4, 0, ey, -20 - e * 4 - 2, e, 5, fieldWid + 10, eh);
-      addStand(fieldWid + 10, eh, 4, 0, ey, 140 + e * 4 + 2, e, 4, fieldWid + 10, eh);
+
+    function addSideStand(side, lineMat, seedBase) {
+      var innerX = side * 43.5;
+      var outward = side;
+      addBox(0.7, 1.35, fieldLen, innerX + outward * 0.85, 0.675, 60, concreteMat);
+      addBox(0.45, 1.4, fieldLen, innerX - outward * 0.25, 0.7, 60, wallMat);
+      addBox(0.13, 0.2, fieldLen, innerX - outward * 0.5, 0.98, 60, lineMat);
+      for (var i = 0; i < sideRows; i++) {
+        var x = innerX + outward * (tread * (i + 0.5));
+        var y = 1.2 + i * rise + rise / 2;
+        addStep(tread, rise, fieldLen, x, y, 60, side < 0 ? 0 : 1, fieldLen, seedBase + i * 11);
+      }
     }
-    return prepModel(g);
+
+    function addEndStand(side, lineMat, seedBase) {
+      var innerZ = side < 0 ? -22 : 142;
+      var outward = side;
+      var width = fieldWid + 14;
+      addBox(width, 1.2, 0.7, 0, 0.6, innerZ + outward * 0.85, concreteMat);
+      addBox(width, 1.4, 0.45, 0, 0.7, innerZ - outward * 0.25, wallMat);
+      addBox(width, 0.2, 0.13, 0, 0.98, innerZ - outward * 0.5, lineMat);
+      for (var i = 0; i < endRows; i++) {
+        var z = innerZ + outward * (tread * (i + 0.5));
+        var y = 1.2 + i * rise + rise / 2;
+        addStep(width, rise, tread, 0, y, z, side < 0 ? 5 : 4, width, seedBase + i * 13);
+      }
+    }
+
+    addSideStand(-1, awayLineMat, 5);
+    addSideStand(1, homeLineMat, 105);
+    addEndStand(-1, awayLineMat, 205);
+    addEndStand(1, homeLineMat, 305);
+    return prepSceneryModel(g);
   }
 
   function makeVoxelCloud(x, y, z, s) {
@@ -588,25 +630,6 @@
     var g = new THREE.Group();
     for (var i = 0; i < voxelClouds.length; i++) g.add(voxelClouds[i]);
     return g;
-  }
-
-  function makeSidelineBenches() {
-    var g = new THREE.Group();
-    function addBench(x, z, color) {
-      var mat = new THREE.MeshLambertMaterial({ color: color });
-      var seat = new THREE.Mesh(new THREE.BoxGeometry(6, 0.35, 1.2), mat);
-      seat.position.set(x, 0.6, z); g.add(seat);
-      var back = new THREE.Mesh(new THREE.BoxGeometry(6, 1.0, 0.28), mat);
-      back.position.set(x, 1.0, z + (x < 0 ? -0.7 : 0.7)); g.add(back);
-      var legMat = new THREE.MeshLambertMaterial({ color: 0x33383d });
-      var legs = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.5, 0.45), legMat);
-      legs.position.set(x, 0.25, z); g.add(legs);
-    }
-    addBench(-35, 42, 0x3f7fd0);
-    addBench(-35, 78, 0x3f7fd0);
-    addBench(35, 42, 0xd9622b);
-    addBench(35, 78, 0xd9622b);
-    return prepModel(g);
   }
 
   function updateVoxelClouds(dt) {
@@ -2680,7 +2703,6 @@
     prepModel(scene);
     scene.add(makeStadiumEnvironment());
     scene.add(makeVoxelClouds());
-    scene.add(makeSidelineBenches());
 
     placeFormation("single");
     camPos.set(30, 38, state.los - 32); camTarget.set(0, 0, state.los);
