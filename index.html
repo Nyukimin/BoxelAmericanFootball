@@ -296,6 +296,54 @@
     return best;
   }
 
+  function targetShortOf(from, target, gap, seed) {
+    var dx = from.x - target.x, dz = from.z - target.z;
+    var d = Math.sqrt(dx * dx + dz * dz);
+    if (d < 0.0001) {
+      var a = (seed || 0) * 2.399963229728653;
+      dx = Math.cos(a); dz = Math.sin(a); d = 1;
+    }
+    return { x: target.x + dx / d * gap, z: target.z + dz / d * gap };
+  }
+
+  function pushPairApart(a, b, minSep, pairIdx, locked) {
+    var dx = a.position.x - b.position.x, dz = a.position.z - b.position.z;
+    var d = Math.sqrt(dx * dx + dz * dz);
+    if (d >= minSep) return;
+    if (d < 0.0001) {
+      var ang = pairIdx * 2.399963229728653;
+      dx = Math.cos(ang); dz = Math.sin(ang); d = 1;
+    }
+    var push = (minSep - d) * 0.5;
+    var nx = dx / d, nz = dz / d;
+    var lockA = (a === locked), lockB = (b === locked);
+    if (lockA && lockB) return;
+    if (lockA) {
+      b.position.x -= nx * push * 2;
+      b.position.z -= nz * push * 2;
+    } else if (lockB) {
+      a.position.x += nx * push * 2;
+      a.position.z += nz * push * 2;
+    } else {
+      a.position.x += nx * push;
+      a.position.z += nz * push;
+      b.position.x -= nx * push;
+      b.position.z -= nz * push;
+    }
+  }
+
+  function applyVisualSeparation(lockedCarrier) {
+    var units = [];
+    for (var i = 0; i < offense.length; i++) if (offense[i].visible !== false) units.push(offense[i]);
+    for (var j = 0; j < defense.length; j++) if (defense[j].visible !== false) units.push(defense[j]);
+    var pairIdx = 1;
+    for (var a = 0; a < units.length; a++) {
+      for (var b = a + 1; b < units.length; b++) {
+        pushPairApart(units[a], units[b], 1.3, pairIdx++, lockedCarrier);
+      }
+    }
+  }
+
   function box(w, h, d, color, x, y, z) {
     var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color: color }));
     m.position.set(x || 0, y || 0, z || 0);
@@ -1487,8 +1535,14 @@
         if (brl === "OL" || brl === "TE") {
           var df = nearestIn(offense, b.position.x, b.position.z, null);   // 最寄りの味方守備に当たる
           if (df) {
-            b.position.x += (df.position.x - b.position.x) * Math.min(1, dt * 1.5);
-            b.position.z += (df.position.z - b.position.z) * Math.min(1, dt * 1.5);
+            var bt = targetShortOf(
+              { x: b.position.x, z: b.position.z },
+              { x: df.position.x, z: df.position.z },
+              1.1,
+              b.id + df.id
+            );
+            b.position.x += (bt.x - b.position.x) * Math.min(1, dt * 1.5);
+            b.position.z += (bt.z - b.position.z) * Math.min(1, dt * 1.5);
             b.rotation.y = Math.atan2(df.position.x - b.position.x, df.position.z - b.position.z);
             BC.poseRun(b, p * 8);
           }
@@ -1513,8 +1567,14 @@
         if (orl === "DL" && !isTk) {                                     // DL: 相手OLに当たって押し合う
           var ol = nearestIn(defense, o.position.x, o.position.z, "OL");
           if (ol) {
-            o.position.x += (ol.position.x - o.position.x) * Math.min(1, dt * 1.4);
-            o.position.z += (ol.position.z - o.position.z) * Math.min(1, dt * 1.4);
+            var ot = targetShortOf(
+              { x: o.position.x, z: o.position.z },
+              { x: ol.position.x, z: ol.position.z },
+              1.1,
+              o.id + ol.id
+            );
+            o.position.x += (ot.x - o.position.x) * Math.min(1, dt * 1.4);
+            o.position.z += (ot.z - o.position.z) * Math.min(1, dt * 1.4);
             o.rotation.y = Math.atan2(ol.position.x - o.position.x, ol.position.z - o.position.z);
             BC.poseRun(o, p * 8);
           }
@@ -1522,13 +1582,20 @@
         }
         // タックラー=強収束 / CB=速い / S=深さを保ち後方で待つ / LB=中速
         var spd = isTk ? 5.5 : (orl === "CB" ? 3.0 : (orl === "S" ? 1.4 : 2.4));
+        var ct = targetShortOf(
+          { x: o.position.x, z: o.position.z },
+          { x: c.position.x, z: c.position.z },
+          1.0,
+          o.id + c.id
+        );
         var tgt = window.BoxelGame.pursuitTarget(
-          { x: o.position.x, z: o.position.z }, { x: c.position.x, z: c.position.z }, dt * spd);
+          { x: o.position.x, z: o.position.z }, ct, dt * spd);
         o.position.x = tgt.x; o.position.z = tgt.z;
         o.rotation.y = Math.atan2(c.position.x - o.position.x, c.position.z - o.position.z);
         poseRunLean(o, p * 8);
       }
       setCarriedBall(c);
+      applyVisualSeparation(c);
       if (p >= 1) {
         defAnim.phase = "end"; defAnim.endT = 0; defAnim.tackler = nearestHome(c);
         if (defAnim.td) spawnConfetti(c.position.x, c.position.y + 2.8, c.position.z, 60);
@@ -1551,6 +1618,7 @@
         tk.rotation.x = -0.4 * ep;
       }
     }
+    applyVisualSeparation(c);
     setCarriedBall(c, Math.max(0.75, 1.0 - ep * 0.25));
     if (ep >= 1) {
       var cb = defAnim.onDone;
@@ -2367,8 +2435,14 @@
         // 最寄りの守備ライン(DL)に当たって押す。パワー勝ちなら前へ、負けなら後ろへ。
         var d = nearestIn(defense, off.position.x, off.position.z, "DL");
         if (d) {
-          off.position.x += (d.position.x - off.position.x) * Math.min(1, dt * 1.6);
-          off.position.z += ((d.position.z - 0.7 + shift) - off.position.z) * Math.min(1, dt * 1.6);
+          var ot = targetShortOf(
+            { x: off.position.x, z: off.position.z },
+            { x: d.position.x, z: d.position.z - 0.7 + shift },
+            1.1,
+            off.id + d.id
+          );
+          off.position.x += (ot.x - off.position.x) * Math.min(1, dt * 1.6);
+          off.position.z += (ot.z - off.position.z) * Math.min(1, dt * 1.6);
           off.rotation.y = Math.atan2(d.position.x - off.position.x, d.position.z - off.position.z);
           off.position.y = Math.abs(Math.sin(p * 26)) * 0.05;   // 踏ん張り
           BC.poseRun(off, p * 13);
@@ -2400,8 +2474,14 @@
         if (role === "DL" && !isTackler) {
           var ol = nearestIn(offense, def.position.x, def.position.z, "OL");
           if (ol) {
-            def.position.x += (ol.position.x - def.position.x) * Math.min(1, dt * 1.4);
-            def.position.z += ((ol.position.z + 0.7 - shift) - def.position.z) * Math.min(1, dt * 1.4);
+            var dtgt = targetShortOf(
+              { x: def.position.x, z: def.position.z },
+              { x: ol.position.x, z: ol.position.z + 0.7 - shift },
+              1.1,
+              def.id + ol.id
+            );
+            def.position.x += (dtgt.x - def.position.x) * Math.min(1, dt * 1.4);
+            def.position.z += (dtgt.z - def.position.z) * Math.min(1, dt * 1.4);
             def.rotation.y = Math.atan2(ol.position.x - def.position.x, ol.position.z - def.position.z);
             BC.poseRun(def, p * 8);
           }
@@ -2413,9 +2493,15 @@
           // タックラーは終盤で強く収束
           pursuitT = dt * 6.0;
         }
-        var tgt = window.BoxelGame.pursuitTarget(
+        var pursueTarget = targetShortOf(
           { x: def.position.x, z: def.position.z },
           { x: carrierNow.position.x, z: carrierNow.position.z },
+          1.0,
+          def.id + carrierNow.id
+        );
+        var tgt = window.BoxelGame.pursuitTarget(
+          { x: def.position.x, z: def.position.z },
+          pursueTarget,
           pursuitT
         );
         def.position.x = tgt.x;
@@ -2428,6 +2514,8 @@
         poseRunLean(def, p * 8);
       }
     }
+
+    applyVisualSeparation(carrierNow);
 
     if (p < 1) return;
 
@@ -2464,6 +2552,7 @@
     var tkr = (anim.tacklerIdx >= 0) ? defense[anim.tacklerIdx] : null;
     if (anim.tackled && anim.hitStopLeft > 0) {
       anim.hitStopLeft = Math.max(0, anim.hitStopLeft - dt);
+      applyVisualSeparation(carrierNow);
       return;
     }
 
@@ -2503,6 +2592,8 @@
       BC.poseCheer(carrierNow, tp);
       setCarriedBall(carrierNow);
     }
+
+    applyVisualSeparation(carrierNow);
 
     if (tp >= 1) { var oFin = anim.o; offense.forEach(function (p0) { BC.poseReset(p0); }); defense.forEach(function (p1) { BC.poseReset(p1); }); anim = null; finalize(oFin); }
   }
