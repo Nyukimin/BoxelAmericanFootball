@@ -20,10 +20,10 @@
   #views { top: 14px; right: 14px; display: flex; gap: 6px; pointer-events: auto; }
   #views button { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
   #views button.on { background: #ee8e3c; border-color: #ee8e3c; }
-  #panel { bottom: 18px; left: 50%; transform: translateX(-50%); width: min(560px, 94vw); text-align: center; pointer-events: auto; }
-  .bubble { background: #fff; color: #2f5d2f; border-radius: 16px; padding: 10px 16px; font-size: 15px; line-height: 1.5; display: inline-block; max-width: 100%; box-shadow: 0 4px 0 rgba(0,0,0,.08); margin-bottom: 12px; }
+  #panel { bottom: 18px; left: 16px; width: min(480px, calc(100vw - 32px)); max-width: 480px; text-align: left; pointer-events: auto; }
+  .bubble { background: #fff; color: #2f5d2f; border-radius: 16px; padding: 10px 16px; font-size: 15px; line-height: 1.5; display: inline-block; max-width: 480px; box-shadow: 0 4px 0 rgba(0,0,0,.08); margin-bottom: 12px; }
   .bubble b { color: #d9622b; }
-  .cards { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .cards { display: flex; gap: 10px; justify-content: flex-start; flex-wrap: wrap; }
   .card { background: #fff; border-radius: 14px; padding: 12px 10px; width: 124px; cursor: pointer; border: 3px solid transparent; transition: transform .08s, border-color .12s; box-shadow: 0 4px 0 rgba(0,0,0,.1); }
   .card:hover { transform: translateY(-3px); border-color: #ffd166; }
   .card .ico { font-size: 28px; }
@@ -37,6 +37,10 @@
   .hint { font-size: 12px; opacity: .75; }
   #tapNext { display: none; margin-top: 8px; text-align: center; font-size: 14px; font-weight: 700; color: #2f4d22; background: #ffe9b8; border: 2px solid #ffd166; border-radius: 10px; padding: 9px; cursor: pointer; animation: tapPulse 1s ease-in-out infinite; }
   #personnelBtn { display: none; margin-top: 8px; text-align: center; font-size: 13px; font-weight: 700; color: #234; background: #dfeefc; border: 2px solid #8fbce6; border-radius: 10px; padding: 8px; cursor: pointer; }
+  @media (max-width: 559px) {
+    #panel { width: calc(100vw - 32px); max-width: none; }
+    .bubble { max-width: 100%; }
+  }
   @keyframes tapPulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
   #helpWrap { top: 52px; right: 14px; pointer-events: auto; }
   #helpBtn, #logBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
