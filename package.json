@@ -1,0 +1,20 @@
+{
+  "name": "boxel-american-football",
+  "version": "1.0.0",
+  "description": "ブラウザだけで遊べる、ボクセル風3Dアメリカンフットボールのゲーム試作です。 プレイヤーは「監督」として隊形（フォーメーション）とプレーを選び、4回のチャンスで10ヤードの前進を目指します。動物たちのチームと、子ども向けの解説役「ホイッスル先生」が登場します。",
+  "main": "characters.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "^1.61.1"
+  }
+}

@@ -1,17 +1,8 @@
-# OS / エディタ
-.DS_Store
-
-# Claude Code 関連（個人設定・履歴）
-.claude/
-
-# E2E の生成物（ログ・スクショ）。実行ごとに変わるためGit管理外。
-tests/e2e/logs/
-tests/e2e/screenshots/
-
-# Python キャッシュ
-__pycache__/
-*.pyc
-
-# 一般ログ
+node_modules/
+test-results/
+playwright-report/
 logs/
 *.log
+__pycache__/
+*.pyc
+.env
