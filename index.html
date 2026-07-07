@@ -195,6 +195,7 @@
   // 6ユニット: home攻撃 / home守備 / away攻撃 / away守備 / home特殊 / away特殊
   var homeOff = [], homeDef = [], awayOff = [], awayDef = [], homeSpec = [], awaySpec = [];
   var prevUnitMode = "offense";   // special から戻る先（"offense"/"defense"）を覚えておく
+  var currentUnitMode = null;
   var clock;
 
   var GOAL_NEAR = 10, GOAL_FAR = 110, MAX_DRIVES = 6;
@@ -222,6 +223,7 @@
   var fgViewLos = 0;    // FG開始時の LOS を保持（アニメ中に state.los が変わるため）
   var continueTimer = null;
   var animTurbo = 1;   // アニメ時間の倍率(自動E2E高速化用・既定1=通常)。結果は乱数依存で不変。
+  var unitTransition = null; // 攻守交代時の入退場演出（見た目のみ）
   var view = "quarter";
   var camPos = new THREE.Vector3(), camTarget = new THREE.Vector3();
   var cameraBlend = null, cameraModeKey = "";
@@ -242,7 +244,67 @@
     homeSpec.forEach(function (p) { p.visible = false; });
     awaySpec.forEach(function (p) { p.visible = false; });
   }
+
+  function regularUnitList(mode) {
+    if (mode === "offense") return homeOff.concat(awayDef);
+    if (mode === "defense") return homeDef.concat(awayOff);
+    return [];
+  }
+
+  function shouldPlayUnitTransition(fromMode, toMode) {
+    if (!fromMode || fromMode === toMode) return false;
+    if ((fromMode !== "offense" && fromMode !== "defense") || (toMode !== "offense" && toMode !== "defense")) return false;
+    // Node のヘッドレス統合テストは DOM/THREE モックで動くため、視覚演出は完全にスキップする。
+    if (typeof navigator === "undefined") return false;
+    if (!renderer || !renderer.domElement || !renderer.domElement.addEventListener) return false;
+    return true;
+  }
+
+  function sideOutX(x) {
+    return (x >= 0 ? 1 : -1) * (FIELD_HALF_W + 8);
+  }
+
+  function looseUnitTarget(mode, idx) {
+    var los = mode === "defense" ? (state.defLos || state.oppLos || state.los) : state.los;
+    var row = idx < 11 ? 0 : 1;
+    var k = idx % 11;
+    var x = (k - 5) * 3.1;
+    var z;
+    if (mode === "offense") z = row === 0 ? los - 2 - (k % 3) * 0.7 : los + 3 + (k % 4) * 0.8;
+    else z = row === 0 ? los + 2 + (k % 3) * 0.7 : los - 3 - (k % 4) * 0.8;
+    return { x: Math.max(-FIELD_HALF_W + 2, Math.min(FIELD_HALF_W - 2, x)), z: z };
+  }
+
+  function beginUnitTransition(fromMode, toMode) {
+    if (!shouldPlayUnitTransition(fromMode, toMode)) { unitTransition = null; return; }
+    var entries = [];
+    var out = regularUnitList(fromMode);
+    var incoming = regularUnitList(toMode);
+    for (var i = 0; i < out.length; i++) {
+      entries.push({
+        p: out[i], kind: "out", delay: (i % 11) * 0.018,
+        x0: out[i].position.x, z0: out[i].position.z,
+        x1: sideOutX(out[i].position.x), z1: out[i].position.z + ((i % 2) ? 2 : -2)
+      });
+    }
+    for (var j = 0; j < incoming.length; j++) {
+      var tgt = looseUnitTarget(toMode, j);
+      var sx = sideOutX(tgt.x || ((j % 2) ? 1 : -1));
+      incoming[j].position.set(sx, 0, tgt.z + ((j % 3) - 1) * 1.5);
+      incoming[j].rotation.set(0, sx > tgt.x ? -Math.PI / 2 : Math.PI / 2, 0);
+      BC.poseRun(incoming[j], 0);
+      entries.push({
+        p: incoming[j], kind: "in", delay: 0.68 + (j % 11) * 0.026,
+        x0: incoming[j].position.x, z0: incoming[j].position.z,
+        x1: tgt.x, z1: tgt.z
+      });
+    }
+    unitTransition = { t: 0, dur: 1.55 * animTurbo, toMode: toMode, entries: entries };
+  }
+
   function setActiveUnits(mode) {
+    var fromMode = currentUnitMode;
+    beginUnitTransition(fromMode, mode);
     hideAllUnits();
     if (mode === "offense") {
       offense = homeOff; defense = awayDef;
@@ -260,6 +322,10 @@
       homeSpec.forEach(function (p) { p.visible = true; });
       awaySpec.forEach(function (p) { p.visible = true; });
     }
+    if (unitTransition) {
+      unitTransition.entries.forEach(function (e) { e.p.visible = true; });
+    }
+    currentUnitMode = mode;
   }
   // キック局面を抜けるときに元の攻撃/守備ユニットへ戻す
   function restoreUnits() { setActiveUnits(prevUnitMode); }
@@ -950,6 +1016,42 @@
   function poseIdleUnits(t) {
     offense.forEach(function (p) { BC.poseIdle(p, t); });
     defense.forEach(function (p) { BC.poseIdle(p, t); });
+  }
+
+  function finishUnitTransition(restoreFormation) {
+    if (!unitTransition) return;
+    var tr = unitTransition;
+    tr.entries.forEach(function (e) {
+      if (e.kind === "out") e.p.visible = false;
+      e.p.position.y = 0;
+      e.p.rotation.x = 0;
+      e.p.rotation.z = 0;
+      BC.poseReset(e.p);
+    });
+    unitTransition = null;
+    if (!restoreFormation) return;
+    if (tr.toMode === "offense" && state.mode === "offense") placeFormation(state.formation || "single");
+    else if (tr.toMode === "defense" && state.mode === "defense") placeOppFormation();
+  }
+
+  function updateUnitTransition(dt) {
+    if (!unitTransition) return;
+    if (state.phase !== "formation") { finishUnitTransition(false); return; }
+    unitTransition.t += dt;
+    var tr = unitTransition;
+    for (var i = 0; i < tr.entries.length; i++) {
+      var e = tr.entries[i];
+      var localDur = e.kind === "out" ? 0.7 * animTurbo : 0.8 * animTurbo;
+      var p = Math.max(0, Math.min(1, (tr.t - e.delay * animTurbo) / localDur));
+      if (p <= 0) continue;
+      var q = easeInOutQuad(p);
+      e.p.position.x = lerp(e.x0, e.x1, q);
+      e.p.position.z = lerp(e.z0, e.z1, q);
+      e.p.position.y = Math.abs(Math.sin(p * Math.PI * 4)) * 0.18;
+      e.p.rotation.y = Math.atan2(e.x1 - e.x0, e.z1 - e.z0);
+      poseRunLean(e.p, (tr.t + i * 0.07) * 8);
+    }
+    if (tr.t >= tr.dur) finishUnitTransition(true);
   }
 
   // ボールマーカー（リング＋矢印）の色を変える。成功=緑 / 失敗=赤 / 通常=黄。
@@ -2729,6 +2831,7 @@
     updateDefenseAnim(dt);
     updateFGKick(dt);
     updateFGMeter(dt);
+    updateUnitTransition(dt);
     updateVoxelClouds(dt);
     updateConfetti(dt);
     updateGoalPostPulse(dt);
@@ -2754,7 +2857,7 @@
       }
     }
     if (trail && trail.material) trail.material.opacity = passFlightActive ? 0.9 : 0.35;
-    if (!anim && !defAnim && !fgKick) poseIdleUnits(t);
+    if (!anim && !defAnim && !fgKick && !unitTransition) poseIdleUnits(t);
     if (manager) {
       var mdx = ball.position.x - manager.position.x, mdz = ball.position.z - manager.position.z;
       var targetYaw = Math.atan2(mdx, mdz);
