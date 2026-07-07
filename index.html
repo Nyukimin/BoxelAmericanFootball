@@ -184,7 +184,9 @@
   var BC = window.BoxelChars;
 
   var scene, camera, renderer, raycaster = null;
-  var ball, ballMarker, trail, trailPts = [], manager = null, firstDownLine = null;
+  var ball, ballMarker, trail, trailPts = [], manager = null, firstDownLine = null, voxelClouds = [];
+  var confettiParts = [], goalPostMats = { near: null, far: null }, goalPostPulse = 0;
+  var passFlightActive = false, passSpiralSpin = 0;
   var offense = [], defense = [], carrier = null, qb = null, rb = null, wr = null;
   // 6ユニット: home攻撃 / home守備 / away攻撃 / away守備 / home特殊 / away特殊
   var homeOff = [], homeDef = [], awayOff = [], awayDef = [], homeSpec = [], awaySpec = [];
@@ -218,6 +220,8 @@
   var animTurbo = 1;   // アニメ時間の倍率(自動E2E高速化用・既定1=通常)。結果は乱数依存で不変。
   var view = "quarter";
   var camPos = new THREE.Vector3(), camTarget = new THREE.Vector3();
+  var cameraBlend = null, cameraModeKey = "";
+  var cameraShake = { t: 0, dur: 0, amp: 0 };
 
   function lerp(a, b, t) { return a + (b - a) * t; }
   function rand(a, b) { return a + gameRng() * (b - a); }
@@ -338,6 +342,16 @@
     return root;
   }
 
+  function prepSceneryModel(root) {
+    prepModel(root);
+    traverseObject(root, function (obj) {
+      if (!obj || !obj.material) return;
+      obj.castShadow = false;
+      obj.receiveShadow = false;
+    });
+    return root;
+  }
+
   function linearColor(hex) {
     var color = new THREE.Color(hex);
     if (color.convertSRGBToLinear) color.convertSRGBToLinear();
@@ -354,13 +368,11 @@
 
   function makeMarker() {
     var g = new THREE.Group();
-    var ring = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.12, 8, 24), new THREE.MeshBasicMaterial({ color: 0xffe14d }));
-    ring.rotation.x = Math.PI / 2; ring.position.y = 3.2; g.add(ring);
-    var beam = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 3, 8), new THREE.MeshBasicMaterial({ color: 0xffe14d, transparent: true, opacity: 0.5 }));
-    beam.position.y = 1.6; g.add(beam);
+    var ring = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.12, 8, 24), new THREE.MeshBasicMaterial({ color: 0xffe14d, transparent: true, opacity: 0.65 }));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06; g.add(ring);
     var arrow = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.6, 4), new THREE.MeshBasicMaterial({ color: 0xff8c1a }));
-    arrow.rotation.x = Math.PI; arrow.position.y = 2.4; g.userData = { arrow: arrow }; g.add(arrow);
-    g.userData.arrow = arrow;
+    arrow.rotation.x = Math.PI; arrow.position.y = 3.0; g.add(arrow);
+    g.userData = { ring: ring, arrow: arrow };
     return prepModel(g);
   }
 
@@ -391,45 +403,369 @@
     firstDownLine.visible = true;
   }
 
+  function canDrawCanvasTexture() {
+    return THREE.PlaneGeometry && THREE.CanvasTexture &&
+      typeof document !== "undefined" && document.createElement &&
+      document.createElement("canvas").getContext;
+  }
+
+  function makeCanvasTexture(w, h, draw) {
+    var canvas = document.createElement("canvas");
+    canvas.width = w; canvas.height = h;
+    var ctx = canvas.getContext("2d");
+    draw(ctx, w, h);
+    var tex = new THREE.CanvasTexture(canvas);
+    tex.encoding = THREE.sRGBEncoding;
+    tex.needsUpdate = true;
+    return tex;
+  }
+
+  function makeCrowdTexture() {
+    if (!canDrawCanvasTexture()) return null;
+    var colors = ["#e85d75", "#f2c14e", "#6fcf97", "#56ccf2", "#9b7ede", "#f2994a", "#ffffff", "#2f80ed", "#27ae60", "#eb5757"];
+    var tex = makeCanvasTexture(256, 64, function (ctx, w, h) {
+      ctx.fillStyle = "#25262b";
+      ctx.fillRect(0, 0, w, h);
+      for (var y = 4; y < h - 6; y += 10) {
+        for (var x = 4; x < w - 6; x += 10) {
+          if (((x * 13 + y * 17) % 7) === 0) continue;
+          var idx = (x * 7 + y * 11 + Math.floor(x / 10) * 3) % colors.length;
+          ctx.fillStyle = colors[idx];
+          ctx.fillRect(x, y, 8, 8);
+        }
+      }
+    });
+    if (THREE.RepeatWrapping) {
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+    }
+    if (THREE.NearestFilter) tex.magFilter = THREE.NearestFilter;
+    return tex;
+  }
+
+  function makeStadiumEnvironment() {
+    var g = new THREE.Group();
+    var crowdTex = makeCrowdTexture();
+    var concreteColors = [0xb9b4aa, 0xaaa59c, 0x9d9992];
+    var fieldLen = 130;
+    var fieldWid = 56;
+    var apron = new THREE.Mesh(
+      new THREE.BoxGeometry(fieldWid + 140, 0.1, 120 + 150),
+      new THREE.MeshLambertMaterial({ color: 0x3f7e3f })
+    );
+    apron.position.set(0, -0.1, 60);
+    apron.receiveShadow = true;
+    g.add(apron);
+
+    function crowdMaterial(faceWorldLength, faceWorldHeight) {
+      var mat = new THREE.MeshLambertMaterial({
+        color: 0xffffff,
+        map: crowdTex || null
+      });
+      if (mat.map && mat.map.clone) {
+        mat.map = mat.map.clone();
+        if (THREE.RepeatWrapping) {
+          mat.map.wrapS = THREE.RepeatWrapping;
+          mat.map.wrapT = THREE.RepeatWrapping;
+        }
+        mat.map.repeat.set(Math.max(1, faceWorldLength / 32), Math.max(1, faceWorldHeight / 8));
+        mat.map.needsUpdate = true;
+      }
+      return mat;
+    }
+
+    function standMaterials(tier, crowdFace, faceLen, faceH) {
+      var concrete = new THREE.MeshLambertMaterial({ color: concreteColors[tier % concreteColors.length] });
+      var crowd = crowdMaterial(faceLen, faceH);
+      var mats = [concrete, concrete, concrete, concrete, concrete, concrete];
+      mats[2] = crowd;
+      mats[crowdFace] = crowd;
+      return mats;
+    }
+
+    function addStand(w, h, d, x, y, z, tier, crowdFace, faceLen, faceH) {
+      var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), standMaterials(tier, crowdFace, faceLen, faceH));
+      m.position.set(x, y, z);
+      m.receiveShadow = true;
+      g.add(m);
+    }
+
+    for (var t = 0; t < 3; t++) {
+      var h = 2.2;
+      var y = t * 2.2 + h / 2;
+      var innerOffset = 14 + t * 4;
+      addStand(4, h, fieldLen, -28 - innerOffset - 2, y, 60, t, 0, fieldLen, h);
+      addStand(4, h, fieldLen, 28 + innerOffset + 2, y, 60, t, 1, fieldLen, h);
+    }
+    for (var e = 0; e < 2; e++) {
+      var eh = 2.2;
+      var ey = e * 2.2 + eh / 2;
+      addStand(fieldWid + 10, eh, 4, 0, ey, -20 - e * 4 - 2, e, 5, fieldWid + 10, eh);
+      addStand(fieldWid + 10, eh, 4, 0, ey, 140 + e * 4 + 2, e, 4, fieldWid + 10, eh);
+    }
+    return prepModel(g);
+  }
+
+  function makeVoxelCloud(x, y, z, s) {
+    var g = new THREE.Group();
+    var mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    var parts = [
+      { x: 0, y: 0, z: 0, w: 8, h: 3, d: 4 },
+      { x: -4.5, y: -0.2, z: 0.3, w: 5, h: 2.4, d: 3.2 },
+      { x: 4.8, y: -0.1, z: -0.2, w: 5.2, h: 2.2, d: 3.4 }
+    ];
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i];
+      var m = new THREE.Mesh(new THREE.BoxGeometry(p.w * s, p.h * s, p.d * s), mat);
+      m.position.set(p.x * s, p.y * s, p.z * s);
+      g.add(m);
+    }
+    g.position.set(x, y, z);
+    g.userData = { drift: 0.12 + (Math.abs(x) % 5) * 0.015, startX: x };
+    return prepSceneryModel(g);
+  }
+
+  function makeVoxelClouds() {
+    voxelClouds = [
+      makeVoxelCloud(-55, 48, 18, 1.0),
+      makeVoxelCloud(48, 54, 38, 0.85),
+      makeVoxelCloud(-34, 58, 78, 1.1),
+      makeVoxelCloud(58, 46, 104, 0.95),
+      makeVoxelCloud(6, 55, 146, 0.9)
+    ];
+    var g = new THREE.Group();
+    for (var i = 0; i < voxelClouds.length; i++) g.add(voxelClouds[i]);
+    return g;
+  }
+
+  function makeSidelineBenches() {
+    var g = new THREE.Group();
+    function addBench(x, z, color) {
+      var mat = new THREE.MeshLambertMaterial({ color: color });
+      var seat = new THREE.Mesh(new THREE.BoxGeometry(6, 0.35, 1.2), mat);
+      seat.position.set(x, 0.6, z); g.add(seat);
+      var back = new THREE.Mesh(new THREE.BoxGeometry(6, 1.0, 0.28), mat);
+      back.position.set(x, 1.0, z + (x < 0 ? -0.7 : 0.7)); g.add(back);
+      var legMat = new THREE.MeshLambertMaterial({ color: 0x33383d });
+      var legs = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.5, 0.45), legMat);
+      legs.position.set(x, 0.25, z); g.add(legs);
+    }
+    addBench(-35, 42, 0x3f7fd0);
+    addBench(-35, 78, 0x3f7fd0);
+    addBench(35, 42, 0xd9622b);
+    addBench(35, 78, 0xd9622b);
+    return prepModel(g);
+  }
+
+  function updateVoxelClouds(dt) {
+    for (var i = 0; i < voxelClouds.length; i++) {
+      var c = voxelClouds[i];
+      c.position.x += c.userData.drift * dt;
+      if (c.position.x > 68) c.position.x = -68;
+    }
+  }
+
+  function makeConfettiGeometry() {
+    if (THREE.PlaneGeometry) return new THREE.PlaneGeometry(0.3, 0.3);
+    return new THREE.BoxGeometry(0.3, 0.04, 0.3);
+  }
+
+  function spawnConfetti(x, y, z, count) {
+    if (!scene || !THREE.MeshBasicMaterial) return;
+    var colors = [0xff9fb2, 0xffe38a, 0xa8e6cf, 0x9fd8ff, 0xc8b6ff, 0xffffff];
+    for (var i = 0; i < count; i++) {
+      var mat = new THREE.MeshBasicMaterial({
+        color: colors[i % colors.length],
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 1
+      });
+      var mesh = new THREE.Mesh(makeConfettiGeometry(), mat);
+      mesh.position.set(x + (Math.random() - 0.5) * 3.0, y + Math.random() * 1.1, z + (Math.random() - 0.5) * 3.0);
+      mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      mesh.userData.confetti = {
+        age: 0,
+        life: 1.5,
+        vx: (Math.random() - 0.5) * 4.0,
+        vy: 4.2 + Math.random() * 3.0,
+        vz: (Math.random() - 0.5) * 4.0,
+        rx: (Math.random() - 0.5) * 9.0,
+        ry: (Math.random() - 0.5) * 9.0,
+        rz: (Math.random() - 0.5) * 9.0
+      };
+      scene.add(mesh);
+      confettiParts.push(mesh);
+    }
+  }
+
+  function updateConfetti(dt) {
+    for (var i = confettiParts.length - 1; i >= 0; i--) {
+      var mesh = confettiParts[i], c = mesh.userData.confetti;
+      c.age += dt;
+      var p = Math.min(1, c.age / c.life);
+      c.vy -= 7.5 * dt;
+      mesh.position.x += c.vx * dt + Math.sin(c.age * 14 + i) * 0.18 * dt;
+      mesh.position.y += c.vy * dt;
+      mesh.position.z += c.vz * dt + Math.cos(c.age * 12 + i) * 0.18 * dt;
+      mesh.rotation.x += c.rx * dt;
+      mesh.rotation.y += c.ry * dt;
+      mesh.rotation.z += c.rz * dt;
+      if (mesh.material) mesh.material.opacity = Math.max(0, 1 - p);
+      if (p >= 1) {
+        if (scene && scene.remove) scene.remove(mesh);
+        confettiParts.splice(i, 1);
+      }
+    }
+  }
+
+  function setMaterialEmissive(mat, hex) {
+    if (!mat) return;
+    if (mat.emissive && mat.emissive.setHex) mat.emissive.setHex(hex);
+    else mat.emissive = new THREE.Color(hex);
+  }
+
+  function pulseGoalPost() {
+    goalPostPulse = 0.6;
+    setMaterialEmissive(goalPostMats.far, 0xfff36b);
+  }
+
+  function updateGoalPostPulse(dt) {
+    if (goalPostPulse <= 0) return;
+    goalPostPulse = Math.max(0, goalPostPulse - dt);
+    var k = goalPostPulse / 0.6;
+    var v = Math.round(0x30 + 0xcf * k);
+    setMaterialEmissive(goalPostMats.far, (v << 16) | (v << 8));
+    if (goalPostPulse <= 0) setMaterialEmissive(goalPostMats.far, 0x000000);
+  }
+
+  function startCameraShake(amp, dur) {
+    cameraShake.t = 0;
+    cameraShake.dur = dur;
+    cameraShake.amp = amp;
+  }
+
+  function makeFieldText(text, w, d, x, z, rotZ, size, opacity) {
+    if (!canDrawCanvasTexture()) return null;
+    var tex = makeCanvasTexture(512, 256, function (ctx, cw, ch) {
+      ctx.clearRect(0, 0, cw, ch);
+      ctx.globalAlpha = opacity == null ? 0.85 : opacity;
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.lineJoin = "round";
+      ctx.lineCap = "round";
+      ctx.font = "900 " + size + "px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+      ctx.fillText(text, cw / 2, ch / 2 + size * 0.04);
+    });
+    var mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+    var mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.rotation.z = rotZ || 0;
+    mesh.position.set(x, 0.155, z);
+    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    return prepModel(mesh);
+  }
+
+  function makeHashColumn(x) {
+    if (!canDrawCanvasTexture()) return null;
+    var tex = makeCanvasTexture(64, 2048, function (ctx, cw, ch) {
+      ctx.clearRect(0, 0, cw, ch);
+      ctx.fillStyle = "rgba(255,255,255,0.64)";
+      var pxPerYard = ch / 100;
+      var dashH = Math.max(2, pxPerYard * 0.28);
+      for (var yd = 0; yd <= 100; yd++) {
+        var y = ch - yd * pxPerYard;
+        ctx.fillRect(cw * 0.15, y - dashH / 2, cw * 0.7, dashH);
+      }
+    });
+    var mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+    var mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 100), mat);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(x, 0.16, 60);
+    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    return prepModel(mesh);
+  }
+
+  function teamLabel(side, fallback) {
+    var t = BC && BC.TEAM && BC.TEAM[side];
+    if (t && typeof t === "object") return t.name || t.label || fallback;
+    return fallback;
+  }
+
   function field() {
     var g = new THREE.Group();
     var mainTurf = box(56, 0.2, 120, 0x4f9d4f, 0, 0, 60); mainTurf.receiveShadow = true; g.add(mainTurf);
     var ezA = box(56, 0.22, 10, 0xd9622b, 0, 0.01, 5); ezA.receiveShadow = true; g.add(ezA);
     var ezB = box(56, 0.22, 10, 0x3f7fd0, 0, 0.01, 115); ezB.receiveShadow = true; g.add(ezB);
+    for (var s = 10; s < 110; s += 5) {
+      var turfColor = (Math.floor((s - 10) / 5) % 2) ? 0x4a924a : 0x4f9d4f;
+      var stripe = new THREE.Mesh(
+        new THREE.BoxGeometry(56, 0.035, 5),
+        new THREE.MeshBasicMaterial({ color: turfColor })
+      );
+      stripe.position.set(0, 0.125, s + 2.5);
+      stripe.receiveShadow = true;
+      stripe.castShadow = false;
+      g.add(prepModel(stripe));
+    }
     for (var y = 10; y <= 110; y += 5) {
       var line = box(54, 0.24, 0.35, 0xffffff, 0, 0.02, y);
       line.receiveShadow = true;
       g.add(line);
     }
-    for (var s = 0; s <= 120; s += 4) {
-      var stripe = box(60, 0.2, 4, (Math.floor(s / 4) % 2 ? 0x4f9d4f : 0x55a755), 0, -0.01, s + 2);
-      stripe.receiveShadow = true; g.add(stripe);
+    var yardNums = [
+      { z: 20, t: "10" }, { z: 30, t: "20" }, { z: 40, t: "30" }, { z: 50, t: "40" },
+      { z: 60, t: "50" }, { z: 70, t: "40" }, { z: 80, t: "30" }, { z: 90, t: "20" }, { z: 100, t: "10" }
+    ];
+    for (var n = 0; n < yardNums.length; n++) {
+      var leftNum = makeFieldText(yardNums[n].t, 5.4, 3.6, -20.5, yardNums[n].z, Math.PI / 2, 132, 0.85);
+      var rightNum = makeFieldText(yardNums[n].t, 5.4, 3.6, 20.5, yardNums[n].z, -Math.PI / 2, 132, 0.85);
+      if (leftNum) g.add(leftNum);
+      if (rightNum) g.add(rightNum);
     }
+    var hashLeft = makeHashColumn(-8.0);
+    var hashRight = makeHashColumn(8.0);
+    if (hashLeft) g.add(hashLeft);
+    if (hashRight) g.add(hashRight);
+    var homeEzText = makeFieldText(teamLabel("home", "ボクセルズ"), 34, 6, 0, 5, 0, 74, 0.78);
+    var awayEzText = makeFieldText(teamLabel("away", "オオカミス"), 34, 6, 0, 115, Math.PI, 74, 0.78);
+    if (homeEzText) g.add(homeEzText);
+    if (awayEzText) g.add(awayEzText);
     // H型ゴールポスト（両エンドゾーン後方）
-    var postMat = new THREE.MeshLambertMaterial({ color: 0xffd700 });
-    var postBase1 = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 7, 8), postMat);
+    var postMatNear = new THREE.MeshLambertMaterial({ color: 0xffd700 });
+    var postMatFar = new THREE.MeshLambertMaterial({ color: 0xffd700 });
+    goalPostMats.near = postMatNear;
+    goalPostMats.far = postMatFar;
+    var postBase1 = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 7, 8), postMatNear);
     postBase1.position.set(0, 3.5, 8); g.add(postBase1);
-    var postCross1 = new THREE.Mesh(new THREE.BoxGeometry(12, 0.4, 0.4), postMat);
+    var postCross1 = new THREE.Mesh(new THREE.BoxGeometry(12, 0.4, 0.4), postMatNear);
     postCross1.position.set(0, 7.5, 8); g.add(postCross1);
-    var postL1 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 5, 8), postMat);
+    var postL1 = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 5, 8), postMatNear);
     postL1.position.set(-6, 9.8, 8); g.add(postL1);
-    var postR1 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 5, 8), postMat);
+    var postR1 = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 5, 8), postMatNear);
     postR1.position.set(6, 9.8, 8); g.add(postR1);
-    var postBase2 = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 7, 8), postMat);
+    var padMat = new THREE.MeshLambertMaterial({ color: 0xd6a000 });
+    var pad1 = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 2, 12), padMat);
+    pad1.position.set(0, 1, 8); g.add(pad1);
+    var postBase2 = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 7, 8), postMatFar);
     postBase2.position.set(0, 3.5, 112); g.add(postBase2);
-    var postCross2 = new THREE.Mesh(new THREE.BoxGeometry(12, 0.4, 0.4), postMat);
+    var postCross2 = new THREE.Mesh(new THREE.BoxGeometry(12, 0.4, 0.4), postMatFar);
     postCross2.position.set(0, 7.5, 112); g.add(postCross2);
-    var postL2 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 5, 8), postMat);
+    var postL2 = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 5, 8), postMatFar);
     postL2.position.set(-6, 9.8, 112); g.add(postL2);
-    var postR2 = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 5, 8), postMat);
+    var postR2 = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 5, 8), postMatFar);
     postR2.position.set(6, 9.8, 112); g.add(postR2);
+    var pad2 = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 2, 12), padMat);
+    pad2.position.set(0, 1, 112); g.add(pad2);
     return prepModel(g);
   }
 
   function placeFormation(formation) {
     var los = state.los;
     // 全選手リセット
-    for (var i = 0; i < offense.length; i++) { offense[i].position.set(0, 0, los); offense[i].rotation.set(0, 0, 0); }
+    for (var i = 0; i < offense.length; i++) { offense[i].position.set(0, 0, los); offense[i].rotation.set(0, 0, 0); BC.poseReset(offense[i]); }
 
     // ロール別グループを収集
     var ols = [], tes = [], wrs = [], rbs = [];
@@ -497,6 +833,7 @@
       var dr = defense[d].userData.role;
       defense[d].position.y = 0;
       defense[d].rotation.set(0, Math.PI, 0);
+      BC.poseReset(defense[d]);
       if (dr === "DL") { defense[d].position.set(dlX[dlIdx] || 0, 0, los + 1.6);  dlIdx++; }
       else if (dr === "LB") { defense[d].position.set(lbX[lbIdx] || 0, 0, los + 5);  lbIdx++; }
       else if (dr === "CB") { defense[d].position.set(cbX[cbIdx] || 0, 0, los + 2); cbIdx++; }
@@ -521,7 +858,26 @@
 
   function setBall(x, z, y) { ball.position.set(x, y == null ? 1.4 : y, z); }
 
-  // ボールマーカー（リング＋ビーム）の色を変える。成功=緑 / 失敗=赤 / 通常=黄。
+  function setCarriedBall(p, yOffset) {
+    var yaw = (p.rotation && p.rotation.y) || 0;
+    var side = 0.42;
+    var forward = 0.06;
+    var x = p.position.x + Math.cos(yaw) * side + Math.sin(yaw) * forward;
+    var z = p.position.z - Math.sin(yaw) * side + Math.cos(yaw) * forward;
+    setBall(x, z, p.position.y + (yOffset == null ? 1.0 : yOffset));
+  }
+
+  function poseRunLean(p, phase) {
+    BC.poseRun(p, phase);
+    p.rotation.x = 0.1;
+  }
+
+  function poseIdleUnits(t) {
+    offense.forEach(function (p) { BC.poseIdle(p, t); });
+    defense.forEach(function (p) { BC.poseIdle(p, t); });
+  }
+
+  // ボールマーカー（リング＋矢印）の色を変える。成功=緑 / 失敗=赤 / 通常=黄。
   // ヘッドレスのモックは material.color を持たないためガードする（見た目のみ）。
   function setMarkerColor(hex) {
     if (!ballMarker || !ballMarker.children) return;
@@ -629,8 +985,8 @@
     dur *= animTurbo;   // turbo時はアニメを短縮（結果は不変）
 
     // 初期位置を保存し、ライン攻防・タックラーを事前計算
-    offense.forEach(function (p) { p.userData.px0 = p.position.x; p.userData.pz0 = p.position.z; p.position.y = 0; p.rotation.x = 0; p.rotation.z = 0; });
-    defense.forEach(function (p) { p.userData.px0 = p.position.x; p.userData.pz0 = p.position.z; p.position.y = 0; p.rotation.x = 0; p.rotation.z = 0; });
+    offense.forEach(function (p) { p.userData.px0 = p.position.x; p.userData.pz0 = p.position.z; p.position.y = 0; p.rotation.x = 0; p.rotation.z = 0; BC.poseReset(p); });
+    defense.forEach(function (p) { p.userData.px0 = p.position.x; p.userData.pz0 = p.position.z; p.position.y = 0; p.rotation.x = 0; p.rotation.z = 0; BC.poseReset(p); });
     setMarkerColor(0xffe14d);   // プレー開始は中立色（黄）に戻す
     var olPower = teamStat(offense, "OL", "power");
     var dPower  = defenseStat("power");
@@ -1057,6 +1413,7 @@
       var dx = (n > 1) ? (d * (24 / (n - 1)) - 12) : 0;
       defense[d].position.set(dx, 0, oppLos + 1);
       defense[d].rotation.set(0, Math.PI, 0);   // 自陣ゴール(-z)方向を向く
+      BC.poseReset(defense[d]);
     }
     var dline = Math.max(GOAL_NEAR + 2, oppLos - 7);
     var m = offense.length;
@@ -1064,6 +1421,7 @@
       var ox = (m > 1) ? (o * (24 / (m - 1)) - 12) : 0;
       offense[o].position.set(ox, 0, dline);
       offense[o].rotation.set(0, 0, 0);         // 相手(+z)方向を向く
+      BC.poseReset(offense[o]);
     }
     applyHashShift(offense);
     applyHashShift(defense);
@@ -1081,11 +1439,13 @@
       var hx = (home.length > 1) ? (i * (40 / (home.length - 1)) - 20) : 0;
       home[i].position.set(hx, 0, kickZ - 7);
       home[i].rotation.set(0, 0, 0);            // 相手(+z)を向く
+      BC.poseReset(home[i]);
     }
     for (var j = 0; j < away.length; j++) {
       var ax = (away.length > 1) ? (j * (40 / (away.length - 1)) - 20) : 0;
       away[j].position.set(ax, 0, kickZ + 7);
       away[j].rotation.set(0, Math.PI, 0);      // 自軍(-z)を向く
+      BC.poseReset(away[j]);
     }
   }
 
@@ -1099,7 +1459,7 @@
     carrier.position.set(0, 0, startZ);
     var blockers = defense.filter(function (x) { return x !== carrier; });
     defAnim = { t: 0, dur: 1.1 * animTurbo, phase: "run", startZ: startZ, endZ: endZ, carrier: carrier, blockers: blockers, td: !!td, onDone: onDone };
-    setBall(carrier.position.x, carrier.position.z - 0.3, 1.3);
+    setCarriedBall(carrier);
   }
 
   function nearestHome(c) {
@@ -1120,6 +1480,7 @@
       c.position.z = lerp(defAnim.startZ, defAnim.endZ, p);
       c.position.x = Math.sin(p * 6) * 0.8 * (1 - p);                  // 緩急をつけて走る（直線にしない）
       c.position.y = Math.abs(Math.sin(p * 16)) * 0.22;
+      poseRunLean(c, p * 8);
       // 相手の攻撃側もロール別に: OL/TE=味方守備へブロック / WR・RB・QB=前方へルート
       defAnim.blockers.forEach(function (b) {
         var brl = b.userData.role;
@@ -1129,6 +1490,7 @@
             b.position.x += (df.position.x - b.position.x) * Math.min(1, dt * 1.5);
             b.position.z += (df.position.z - b.position.z) * Math.min(1, dt * 1.5);
             b.rotation.y = Math.atan2(df.position.x - b.position.x, df.position.z - b.position.z);
+            BC.poseRun(b, p * 8);
           }
         } else {
           // WR/RB/QB: 前方(-z)へ進みつつ外へ開く（ルート/リード風）
@@ -1136,6 +1498,7 @@
           b.position.z = lerp(defAnim.startZ + 1, defAnim.endZ - 1, p);
           b.position.x += dir * dt * 1.6;
           b.rotation.y = Math.PI;
+          poseRunLean(b, p * 8);
         }
       });
       // 味方守備をロール別に動かす（全員ボールへ殺到しない・敵守備と同じ思想）
@@ -1153,6 +1516,7 @@
             o.position.x += (ol.position.x - o.position.x) * Math.min(1, dt * 1.4);
             o.position.z += (ol.position.z - o.position.z) * Math.min(1, dt * 1.4);
             o.rotation.y = Math.atan2(ol.position.x - o.position.x, ol.position.z - o.position.z);
+            BC.poseRun(o, p * 8);
           }
           continue;
         }
@@ -1162,9 +1526,13 @@
           { x: o.position.x, z: o.position.z }, { x: c.position.x, z: c.position.z }, dt * spd);
         o.position.x = tgt.x; o.position.z = tgt.z;
         o.rotation.y = Math.atan2(c.position.x - o.position.x, c.position.z - o.position.z);
+        poseRunLean(o, p * 8);
       }
-      setBall(c.position.x, c.position.z - 0.3, 1.3);
-      if (p >= 1) { defAnim.phase = "end"; defAnim.endT = 0; defAnim.tackler = nearestHome(c); }
+      setCarriedBall(c);
+      if (p >= 1) {
+        defAnim.phase = "end"; defAnim.endT = 0; defAnim.tackler = nearestHome(c);
+        if (defAnim.td) spawnConfetti(c.position.x, c.position.y + 2.8, c.position.z, 60);
+      }
       return;
     }
     // phase === "end": タックル/得点の決めの見た目
@@ -1172,6 +1540,7 @@
     var ep = Math.min(1, defAnim.endT / 0.45);
     if (defAnim.td) {
       c.position.y = Math.abs(Math.sin(ep * Math.PI * 2)) * (1 - ep) * 0.7;   // TD: 喜ぶ
+      BC.poseCheer(c, ep);
     } else {
       c.rotation.x = -1.2 * ep;                                              // 味方が止めて倒す
       c.position.y = Math.max(0, 0.2 * (1 - ep));
@@ -1182,8 +1551,14 @@
         tk.rotation.x = -0.4 * ep;
       }
     }
-    setBall(c.position.x, c.position.z - 0.3, Math.max(0.3, 1.2 - ep));
-    if (ep >= 1) { var cb = defAnim.onDone; defAnim = null; if (cb) cb(); }
+    setCarriedBall(c, Math.max(0.75, 1.0 - ep * 0.25));
+    if (ep >= 1) {
+      var cb = defAnim.onDone;
+      offense.forEach(function (p0) { BC.poseReset(p0); });
+      defense.forEach(function (p1) { BC.poseReset(p1); });
+      defAnim = null;
+      if (cb) cb();
+    }
   }
 
   // キックオフ処理（非インタラクティブ・waitContinueで一拍おく）
@@ -1227,6 +1602,11 @@
     var y = 1.4 + p * (1 - p * 0.4) * 16;   // 急上昇してゴールポスト付近（y≈11）を通過
     setBall(x, z, y);
     if (p >= 1) {
+      if (fgKick.success && !fgKick.burst) {
+        fgKick.burst = true;
+        spawnConfetti(0, 8.2, 112, 64);
+        pulseGoalPost();
+      }
       var cb = fgKick.onDone; fgKick = null; if (cb) cb();
     }
   }
@@ -1869,25 +2249,57 @@
     if (el) el.style.display = "none";
   }
 
-  function updateCamera(dt) {
-    var lerp2 = 1 - Math.pow(0.001, dt);
+  function easeInOutQuad(t) {
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  }
+
+  function currentCameraRig() {
     // FGミニゲーム中はゴールポスト正面視点（ボール位置から前方を向く）
     if (fgView) {
       var hx = fgViewLos ? (state.hashX || 0) : 0;
-      camPos.lerp(new THREE.Vector3(hx, 6, fgViewLos - 8), lerp2);
-      camTarget.lerp(new THREE.Vector3(0, 9, 112), lerp2);
-      camera.position.copy(camPos); camera.lookAt(camTarget);
-      return;
+      return {
+        key: "fg:" + fgViewLos + ":" + hx,
+        pos: new THREE.Vector3(hx, 6, fgViewLos - 8),
+        target: new THREE.Vector3(0, 9, 112)
+      };
     }
     var focus = (state.phase === "animating") ? ball.position : new THREE.Vector3(0, 0, state.los + 6);
     var off, look;
     if (view === "top") { off = new THREE.Vector3(0, 78, -4); look = focus; }
     else if (view === "player") { off = new THREE.Vector3(0, 7, -16); look = new THREE.Vector3(focus.x, 2, focus.z + 16); }
     else { off = new THREE.Vector3(30, 38, -32); look = focus; }
-    var desired = focus.clone().add(off);
-    camPos.lerp(desired, lerp2);
-    camTarget.lerp(look, lerp2);
-    camera.position.copy(camPos); camera.lookAt(camTarget);
+    return { key: view, pos: focus.clone().add(off), target: look };
+  }
+
+  function updateCamera(dt) {
+    var rig = currentCameraRig();
+    if (cameraModeKey && cameraModeKey !== rig.key) {
+      cameraBlend = { t: 0, dur: 0.5, fromPos: camPos.clone(), fromTarget: camTarget.clone() };
+    }
+    cameraModeKey = rig.key;
+
+    if (cameraBlend) {
+      cameraBlend.t += dt;
+      var bp = Math.min(1, cameraBlend.t / cameraBlend.dur);
+      var e = easeInOutQuad(bp);
+      camPos.copy(cameraBlend.fromPos).lerp(rig.pos, e);
+      camTarget.copy(cameraBlend.fromTarget).lerp(rig.target, e);
+      if (bp >= 1) cameraBlend = null;
+    } else {
+      var lerp2 = 1 - Math.pow(0.001, dt);
+      camPos.lerp(rig.pos, lerp2);
+      camTarget.lerp(rig.target, lerp2);
+    }
+
+    var renderPos = camPos.clone();
+    if (cameraShake.dur > 0 && cameraShake.t < cameraShake.dur) {
+      cameraShake.t += dt;
+      var sk = Math.max(0, 1 - cameraShake.t / cameraShake.dur) * cameraShake.amp;
+      renderPos.x += Math.sin(cameraShake.t * 95) * sk;
+      renderPos.y += Math.sin(cameraShake.t * 131 + 1.7) * sk * 0.45;
+      renderPos.z += Math.cos(cameraShake.t * 113) * sk;
+    }
+    camera.position.copy(renderPos); camera.lookAt(camTarget);
   }
 
   function updateAnim(dt) {
@@ -1899,7 +2311,8 @@
     if (anim.kind === "run") {
       var z = lerp(anim.startZ, anim.endZ, p);
       carrier.position.z = z; carrier.position.y = Math.abs(Math.sin(p * 18)) * 0.25;
-      setBall(carrier.position.x, z + 0.3, 1.3);
+      poseRunLean(carrier, p * 9);
+      setCarriedBall(carrier);
     } else {
       var tf = anim.throwFrac || 0.78;
       if (p < tf) {
@@ -1911,7 +2324,9 @@
         wr.position.x = lerp(anim.wrFromX, anim.wrTarget.x, pp);
         wr.position.z = lerp(anim.wrFromZ, anim.wrTarget.z, pp);
         wr.position.y = Math.abs(Math.sin(pp * 16)) * 0.2;
+        poseRunLean(wr, pp * 8);
         setBall(bx0, bz0, by0);
+        passFlightActive = true;
       } else {
         var pp2 = (p - tf) / (1 - tf);
         if (anim.o.complete) {
@@ -1920,12 +2335,14 @@
           var fz = lerp(anim.wrTarget.z, anim.endZ, pp2);
           var catchHop = Math.max(0, 0.25 - pp2) * 2.3;      // 捕った瞬間にジャンプ（実寸キャラに合わせ控えめ）
           wr.position.z = fz; wr.position.y = Math.abs(Math.sin(pp2 * 14)) * 0.2 + catchHop;
-          setBall(wr.position.x, fz + 0.3, 1.4 + catchHop);
+          poseRunLean(wr, pp2 * 7);
+          setCarriedBall(wr);
         } else if (anim.o.reason === "overthrow") {
           // 届かず: マーカー赤＋受け手は先へ走り抜け、ボールは手前(ballLand)で小さく弾む
           setMarkerColor(0xff3b30);
           wr.position.z = Math.min(GOAL_FAR + 8, lerp(anim.wrTarget.z, anim.wrTarget.z + 4, pp2));   // 受け手はさらに前へ（場外には出ない）
           wr.position.y = Math.abs(Math.sin(pp2 * 12)) * 0.18;
+          poseRunLean(wr, pp2 * 6);
           var oy = Math.abs(Math.sin(pp2 * Math.PI * 2)) * (1 - pp2) * 1.2 + 0.3;
           setBall(anim.ballLand.x, anim.ballLand.z, oy);
         } else {
@@ -1954,10 +2371,12 @@
           off.position.z += ((d.position.z - 0.7 + shift) - off.position.z) * Math.min(1, dt * 1.6);
           off.rotation.y = Math.atan2(d.position.x - off.position.x, d.position.z - off.position.z);
           off.position.y = Math.abs(Math.sin(p * 26)) * 0.05;   // 踏ん張り
+          BC.poseRun(off, p * 13);
         }
       } else if (orole === "QB") {
         if (anim.kind === "pass") off.position.z = off.userData.pz0 - Math.min(p / 0.3, 1) * 6;  // ドロップバック
         else off.position.z = off.userData.pz0 - Math.min(p / 0.4, 1) * 3;                        // ラン: フェイク後に少し下がる
+        poseRunLean(off, p * 8);
       } else {
         // 非ターゲットの WR/RB: 斜め前へルートを走る（デコイ）。
         // ゴール際でフィールド外へ走り抜けないよう、前進量(z)と横幅(x)をフィールド内にクランプする。
@@ -1967,6 +2386,7 @@
         off.position.x = Math.max(-FIELD_HALF_W, Math.min(FIELD_HALF_W, off.userData.px0 + dir * p * 6));
         off.position.y = Math.abs(Math.sin(p * 16)) * 0.18;
         off.rotation.y = Math.atan2(dir * 6, 16);
+        poseRunLean(off, p * 8);
       }
     });
 
@@ -1983,6 +2403,7 @@
             def.position.x += (ol.position.x - def.position.x) * Math.min(1, dt * 1.4);
             def.position.z += ((ol.position.z + 0.7 - shift) - def.position.z) * Math.min(1, dt * 1.4);
             def.rotation.y = Math.atan2(ol.position.x - def.position.x, ol.position.z - def.position.z);
+            BC.poseRun(def, p * 8);
           }
           continue;
         }
@@ -2004,6 +2425,7 @@
           carrierNow.position.x - def.position.x,
           carrierNow.position.z - def.position.z
         );
+        poseRunLean(def, p * 8);
       }
     }
 
@@ -2023,6 +2445,7 @@
       // ゴール到達（タッチダウン）は倒れず喜ぶ。それ以外は守備に止められて倒れる。
       anim.isTD = anim.endZ >= GOAL_FAR - 0.5;
       anim.tackled = !anim.isTD;
+      if (anim.isTD) spawnConfetti(carrierNow.position.x, carrierNow.position.y + 2.8, carrierNow.position.z, 60);
       if (anim.tackled) {
         // いま実際にいちばん近い守備をタックラーにする（見た目の当たりを保証）
         anim.tacklerIdx = window.BoxelGame.nearestDefenderIndex(
@@ -2038,14 +2461,29 @@
       }
     }
 
+    var tkr = (anim.tacklerIdx >= 0) ? defense[anim.tacklerIdx] : null;
+    if (anim.tackled && anim.hitStopLeft > 0) {
+      anim.hitStopLeft = Math.max(0, anim.hitStopLeft - dt);
+      return;
+    }
+
     anim.tackT += dt;
     var tp = Math.min(1, anim.tackT / 0.6);
-    var tkr = (anim.tacklerIdx >= 0) ? defense[anim.tacklerIdx] : null;
 
     if (anim.tackled) {
       // --- 倒れる演出: 守備が当たりに行き、キャリアが転倒する ---
       // 前半(〜0.35): タックラーがキャリアへ突っ込んで密着（当たり）
       var hitP = Math.min(1, tp / 0.35);
+      if (!anim.hitStopDone && hitP >= 1) {
+        anim.hitStopDone = true;
+        anim.hitStopLeft = 0.1;
+        startCameraShake(0.12, 0.15);
+      }
+      var baseScale = carrierNow.userData && carrierNow.userData.baseScale;
+      if (baseScale) {
+        var squash = Math.sin(hitP * Math.PI);
+        carrierNow.scale.set(baseScale.x * (1 + squash * 0.12), baseScale.y * (1 - squash * 0.18), baseScale.z * (1 + squash * 0.12));
+      }
       if (tkr) {
         tkr.position.x = lerp(anim.tkFromX, carrierNow.position.x, hitP);
         tkr.position.z = lerp(anim.tkFromZ, carrierNow.position.z - 0.9, hitP);
@@ -2057,15 +2495,16 @@
       carrierNow.rotation.z = Math.sin(tp * Math.PI * 2) * 0.2 * (1 - fallP);
       carrierNow.position.y = anim.carrierBaseY + Math.sin(hitP * Math.PI) * 0.3 * (1 - fallP);
       if (tkr) tkr.rotation.x = -0.5 * fallP;                            // のしかかる
-      setBall(carrierNow.position.x, carrierNow.position.z + 0.3, Math.max(0.3, 1.2 - fallP));
+      setCarriedBall(carrierNow, Math.max(0.75, 1.0 - fallP * 0.25));
     } else {
       // --- 倒れない演出: タッチダウンで喜ぶ（小さくジャンプ・倒れない）---
       var hop = Math.abs(Math.sin(tp * Math.PI * 2)) * (1 - tp);
       carrierNow.position.y = anim.carrierBaseY + hop * 0.7;
-      setBall(carrierNow.position.x, carrierNow.position.z + 0.3, 1.2 + hop * 1.2);
+      BC.poseCheer(carrierNow, tp);
+      setCarriedBall(carrierNow);
     }
 
-    if (tp >= 1) { var oFin = anim.o; anim = null; finalize(oFin); }
+    if (tp >= 1) { var oFin = anim.o; offense.forEach(function (p0) { BC.poseReset(p0); }); defense.forEach(function (p1) { BC.poseReset(p1); }); anim = null; finalize(oFin); }
   }
 
   function updateTrail() {
@@ -2141,9 +2580,12 @@
 
     var tg = new THREE.BufferGeometry();
     tg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(50 * 3), 3));
-    trail = new THREE.Line(tg, new THREE.LineBasicMaterial({ color: 0xffe14d, transparent: true, opacity: 0.7 }));
+    trail = new THREE.Line(tg, new THREE.LineBasicMaterial({ color: 0xffe14d, transparent: true, opacity: 0.35 }));
     scene.add(prepModel(trail));
     prepModel(scene);
+    scene.add(makeStadiumEnvironment());
+    scene.add(makeVoxelClouds());
+    scene.add(makeSidelineBenches());
 
     placeFormation("single");
     camPos.set(30, 38, state.los - 32); camTarget.set(0, 0, state.los);
@@ -2164,15 +2606,38 @@
   function animate() {
     requestAnimationFrame(animate);
     var dt = Math.min(0.05, clock.getDelta());
+    passFlightActive = false;
+    var ballPrev = ball.position.clone();
     updateAnim(dt);
     updateDefenseAnim(dt);
     updateFGKick(dt);
     updateFGMeter(dt);
-    ballMarker.position.set(ball.position.x, ball.position.y, ball.position.z);
+    updateVoxelClouds(dt);
+    updateConfetti(dt);
+    updateGoalPostPulse(dt);
+    ballMarker.position.set(ball.position.x, 0, ball.position.z);
     var t = clock.elapsedTime;
-    ballMarker.children[0].rotation.z = t * 2;
-    ballMarker.userData.arrow.position.y = 2.4 + Math.sin(t * 4) * 0.2;
+    var pulse = (Math.sin(t * 4) + 1) * 0.5;
+    var ringScale = 1 + pulse * 0.25;
+    if (ballMarker.userData.ring.scale.setScalar) ballMarker.userData.ring.scale.setScalar(ringScale);
+    else if (ballMarker.userData.ring.scale.set) ballMarker.userData.ring.scale.set(ringScale, ringScale, ringScale);
+    else ballMarker.userData.ring.scale.x = ballMarker.userData.ring.scale.y = ballMarker.userData.ring.scale.z = ringScale;
+    ballMarker.userData.ring.material.opacity = 0.55 + pulse * 0.25;
+    ballMarker.userData.arrow.position.y = ball.position.y + 2.5 + Math.sin(t * 4) * 0.2;
     ball.rotation.z += dt * 4;
+    if (passFlightActive) {
+      var flightDir = ball.position.clone().sub(ballPrev);
+      if (flightDir.lengthSq() > 0.0001) {
+        passSpiralSpin += dt * 34;
+        flightDir.normalize();
+        ball.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), flightDir);
+        ball.rotateX(passSpiralSpin);
+      } else {
+        ball.rotation.x += dt * 34;
+      }
+    }
+    if (trail && trail.material) trail.material.opacity = passFlightActive ? 0.9 : 0.35;
+    if (!anim && !defAnim && !fgKick) poseIdleUnits(t);
     if (manager) {
       var mdx = ball.position.x - manager.position.x, mdz = ball.position.z - manager.position.z;
       var targetYaw = Math.atan2(mdx, mdz);

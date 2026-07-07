@@ -35,6 +35,12 @@
     return m;
   }
 
+  function pivotGroup(x, y, z) {
+    var group = new THREE.Group();
+    group.position.set(x || 0, y || 0, z || 0);
+    return group;
+  }
+
   // ===== パレット（毛色） =====
   var FUR = {
     owl: 0xe7d4a8, rabbit: 0xf6f0e6, squirrel: 0xd38c50,
@@ -175,11 +181,15 @@
     var g = new THREE.Group();
     var DARK = 0x2b2b2b, WHITE = 0xffffff;
 
-    // 脚と靴
-    g.add(box(0.42, 0.7, 0.5, fur, -0.3, 0.45, 0));
-    g.add(box(0.42, 0.7, 0.5, fur, 0.3, 0.45, 0));
-    g.add(box(0.5, 0.26, 0.74, 0x4a3322, -0.3, 0.13, 0.1));
-    g.add(box(0.5, 0.26, 0.74, 0x4a3322, 0.3, 0.13, 0.1));
+    // 脚と靴。腰位置をピボットにして、静止時のワールド座標は旧構造と同一にする。
+    var legL = pivotGroup(-0.3, 0.8, 0);
+    var legR = pivotGroup(0.3, 0.8, 0);
+    legL.add(box(0.42, 0.7, 0.5, fur, 0, -0.35, 0));
+    legR.add(box(0.42, 0.7, 0.5, fur, 0, -0.35, 0));
+    legL.add(box(0.5, 0.26, 0.74, 0x4a3322, 0, -0.67, 0.1));
+    legR.add(box(0.5, 0.26, 0.74, 0x4a3322, 0, -0.67, 0.1));
+    g.add(legL);
+    g.add(legR);
 
     // 胴体（ユニフォーム）
     g.add(box(1.32, 1.15, 1.0, jersey, 0, 1.35, 0));
@@ -191,14 +201,18 @@
     g.add(box(0.66, 0.72, 0.06, WHITE, 0, 1.42, 0.52));
     g.add(box(0.08, 0.92, 0.05, jersey, 0, 1.42, 0.56));
     // 腕（ユニフォーム）＋そで口ライン＋手（毛色）＋リストバンド
-    g.add(box(0.32, 1.0, 0.42, jersey, -0.86, 1.42, 0));
-    g.add(box(0.32, 1.0, 0.42, jersey, 0.86, 1.42, 0));
-    g.add(box(0.34, 0.12, 0.44, WHITE, -0.86, 1.74, 0.02));
-    g.add(box(0.34, 0.12, 0.44, WHITE, 0.86, 1.74, 0.02));
-    g.add(box(0.36, 0.34, 0.46, fur, -0.86, 0.92, 0.04));
-    g.add(box(0.36, 0.34, 0.46, fur, 0.86, 0.92, 0.04));
-    g.add(box(0.38, 0.14, 0.48, 0xffd166, -0.86, 1.12, 0.04));
-    g.add(box(0.38, 0.14, 0.48, 0xffd166, 0.86, 1.12, 0.04));
+    var armL = pivotGroup(-0.86, 1.92, 0);
+    var armR = pivotGroup(0.86, 1.92, 0);
+    armL.add(box(0.32, 1.0, 0.42, jersey, 0, -0.5, 0));
+    armR.add(box(0.32, 1.0, 0.42, jersey, 0, -0.5, 0));
+    armL.add(box(0.34, 0.12, 0.44, WHITE, 0, -0.18, 0.02));
+    armR.add(box(0.34, 0.12, 0.44, WHITE, 0, -0.18, 0.02));
+    armL.add(box(0.36, 0.34, 0.46, fur, 0, -1.0, 0.04));
+    armR.add(box(0.36, 0.34, 0.46, fur, 0, -1.0, 0.04));
+    armL.add(box(0.38, 0.14, 0.48, 0xffd166, 0, -0.8, 0.04));
+    armR.add(box(0.38, 0.14, 0.48, 0xffd166, 0, -0.8, 0.04));
+    g.add(armL);
+    g.add(armR);
 
     // 頭（サブグループ）＋共通の顔（白目＋黒目＋ほっぺ）
     var head = new THREE.Group();
@@ -280,7 +294,70 @@
     g.scale.set(0.72, 0.9, 0.8);
     g.userData.base = g.position.clone();
     g.userData.head = head;
+    g.userData.legL = legL;
+    g.userData.legR = legR;
+    g.userData.armL = armL;
+    g.userData.armR = armR;
     return g;
+  }
+
+  function roleScale(role) {
+    var map = {
+      OL: { x: 1.15, y: 0.94, z: 1.12 },
+      DL: { x: 1.15, y: 0.94, z: 1.12 },
+      TE: { x: 1.08, y: 1.0, z: 1.05 },
+      LB: { x: 1.08, y: 1.0, z: 1.05 },
+      RB: { x: 1.0, y: 0.88, z: 1.0 },
+      QB: { x: 1.0, y: 1.0, z: 1.0 },
+      WR: { x: 0.86, y: 1.05, z: 0.95 },
+      CB: { x: 0.86, y: 1.05, z: 0.95 },
+      S:  { x: 0.86, y: 1.05, z: 0.95 },
+      K:  { x: 0.9, y: 1.0, z: 0.95 },
+      P:  { x: 0.9, y: 1.0, z: 0.95 }
+    };
+    return map[role] || { x: 1, y: 1, z: 1 };
+  }
+
+  function applyRoleScale(g, role) {
+    var s = roleScale(role);
+    g.scale.set(g.scale.x * s.x, g.scale.y * s.y, g.scale.z * s.z);
+    g.userData.baseScale = g.scale.clone();
+  }
+
+  function poseReset(g) {
+    if (!g || !g.userData) return;
+    if (g.userData.legL) g.userData.legL.rotation.x = 0;
+    if (g.userData.legR) g.userData.legR.rotation.x = 0;
+    if (g.userData.armL) g.userData.armL.rotation.x = 0;
+    if (g.userData.armR) g.userData.armR.rotation.x = 0;
+    if (g.userData.baseScale) g.scale.copy(g.userData.baseScale);
+  }
+
+  function poseRun(g, phase) {
+    if (!g || !g.userData || !g.userData.legL || !g.userData.legR || !g.userData.armL || !g.userData.armR) return;
+    var swing = Math.sin(phase || 0);
+    g.userData.legL.rotation.x = swing * 0.7;
+    g.userData.legR.rotation.x = -swing * 0.7;
+    g.userData.armL.rotation.x = -swing * 0.55;
+    g.userData.armR.rotation.x = swing * 0.55;
+  }
+
+  function poseIdle(g, t) {
+    if (!g || !g.userData || !g.userData.armL || !g.userData.armR) return;
+    var sway = Math.sin((t || 0) * Math.PI * 2 / 3) * 0.05;
+    if (g.userData.legL) g.userData.legL.rotation.x = 0;
+    if (g.userData.legR) g.userData.legR.rotation.x = 0;
+    g.userData.armL.rotation.x = sway;
+    g.userData.armR.rotation.x = -sway;
+  }
+
+  function poseCheer(g, t) {
+    if (!g || !g.userData || !g.userData.armL || !g.userData.armR) return;
+    var wave = Math.sin((t || 0) * Math.PI * 4) * 0.12;
+    g.userData.armL.rotation.x = -2.8 + wave;
+    g.userData.armR.rotation.x = -2.8 - wave;
+    if (g.userData.legL) g.userData.legL.rotation.x = Math.sin((t || 0) * Math.PI * 2) * 0.08;
+    if (g.userData.legR) g.userData.legR.rotation.x = -Math.sin((t || 0) * Math.PI * 2) * 0.08;
   }
 
   // サイドラインで試合を撮影するマネージャー（記録・分析の可視化）
@@ -334,6 +411,7 @@
     g.userData.role = cfg.role;
     g.userData.animal = cfg.animal;
     g.userData.stats = resolveStats(cfg.stats);
+    applyRoleScale(g, cfg.role);
     return g;
   }
 
@@ -344,6 +422,7 @@
     HOME_SPECIAL: HOME_SPECIAL, AWAY_SPECIAL: AWAY_SPECIAL,
     MANAGER: MANAGER,
     box: box, makeAnimal: makeAnimal, makeManager: makeManager,
-    makePlayer: makePlayer, resolveStats: resolveStats
+    makePlayer: makePlayer, resolveStats: resolveStats,
+    poseRun: poseRun, poseIdle: poseIdle, poseReset: poseReset, poseCheer: poseCheer
   };
 })(window);
