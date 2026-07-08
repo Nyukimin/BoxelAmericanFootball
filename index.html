@@ -58,17 +58,23 @@
   #timeoutBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
   #timeoutBtn:disabled { opacity: .45; cursor: default; }
   #help { position: absolute; inset: 0; background: rgba(20,30,16,.92); z-index: 20; display: none; overflow-y: auto; pointer-events: auto; padding: 24px 14px 40px; }
-  #help .sheet { background: #fff; color: #2f4d22; max-width: 680px; margin: 0 auto; border-radius: 16px; padding: 22px; line-height: 1.6; }
-  #help h2 { color: #2f6b3c; font-size: 24px; margin-bottom: 4px; }
-  #help .lead { color: #6b7d59; font-size: 13px; margin-bottom: 6px; }
-  #help h3 { color: #d9622b; font-size: 17px; margin: 18px 0 6px; border-bottom: 2px solid #ffe1b0; padding-bottom: 3px; }
-  #help p, #help li { font-size: 14px; }
-  #help ul { margin: 4px 0 4px 18px; }
-  #help table { border-collapse: collapse; width: 100%; margin: 6px 0; font-size: 13px; }
-  #help th, #help td { border: 1px solid #d8e6c8; padding: 5px 8px; text-align: center; }
-  #help th { background: #f0f7e6; }
+  #help .sheet { background: #fff; color: #2f4d22; max-width: 920px; margin: 0 auto; border-radius: 16px; padding: 18px; line-height: 1.65; }
+  #help .viewer-img { display: block; width: 100%; max-width: 100%; height: auto; border-radius: 14px; background: #f0f7e6; }
+  #help h2 { color: #2f6b3c; font-size: 24px; margin: 16px 0 8px; }
+  #help .caption { color: #2f4d22; font-size: 15px; }
   #help b { color: #d9622b; }
-  #help .close { display: block; margin: 20px auto 0; background: #ee8e3c; color: #fff; border: none; border-radius: 12px; padding: 11px 28px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  #help .viewer-nav { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+  #help .nav-btn, #help .close { background: #ee8e3c; color: #fff; border: none; border-radius: 12px; padding: 10px 18px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  #help .nav-btn:disabled { opacity: .35; cursor: default; }
+  #help .page-count { color: #2f4d22; font-size: 14px; font-weight: 700; min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
+  #help .close { display: block; margin: 16px auto 0; padding: 11px 28px; font-size: 15px; }
+  @media (max-width: 559px) {
+    #help { padding: 14px 10px 28px; }
+    #help .sheet { padding: 14px; border-radius: 14px; }
+    #help h2 { font-size: 21px; }
+    #help .caption { font-size: 14px; }
+    #help .nav-btn, #help .close { padding: 10px 14px; }
+  }
   #playerInfo { position: absolute; top: 92px; left: 14px; z-index: 8; display: none; pointer-events: auto; background: rgba(36,48,24,.92); color: #fff; border-radius: 12px; padding: 10px 14px; max-width: 290px; cursor: pointer; box-shadow: 0 4px 0 rgba(0,0,0,.15); }
   #playerInfo .pi-name { font-size: 16px; font-weight: 700; }
   #playerInfo .pi-team { font-size: 11px; background: rgba(255,255,255,.22); border-radius: 6px; padding: 1px 6px; margin-left: 5px; vertical-align: middle; }
@@ -110,56 +116,15 @@
 
 <div id="help">
   <div class="sheet">
-    <h2>アメリカンフットボール 基礎ガイド</h2>
-    <div class="lead">チームを支えるために知っておきたい、ルール・ポジション・作戦の考え方をまとめています。</div>
-
-    <h3>1. 基本ルール（4ダウン制）</h3>
-    <ul>
-      <li>オフェンスは<b>4回の攻撃（ダウン）で10ヤード前進</b>を目指す。達成すると新たな4ダウン（<b>ファーストダウン</b>）を得て攻撃を継続できる。</li>
-      <li>4ダウン以内に10ヤードへ届かない、パスをインターセプトされる、ファンブルを失うと<b>ターンオーバー（攻守交代）</b>。</li>
-      <li>ボールをエンドゾーンへ運ぶと<b>タッチダウン（6点＋追加点で計7点が基本）</b>。攻めきれない位置では<b>フィールドゴール（3点・キック）</b>を選択する。</li>
-      <li>陣地は自陣・敵陣の2区分で表す（例：敵陣35ヤード）。残りダウン数とこの距離が、采配の判断材料になる。</li>
-    </ul>
-
-    <h3>2. ポジション（オフェンス）</h3>
-    <ul>
-      <li><b>QB</b>（クォーターバック）：攻撃の司令塔。パスを投げ、プレーを統率する。</li>
-      <li><b>RB</b>（ランニングバック）：ボールを持って走る主力。</li>
-      <li><b>WR</b>（ワイドレシーバー）：パスを捕る。スピードと捕球が問われる。</li>
-      <li><b>TE</b>（タイトエンド）：ブロックとレシーブを兼ねる万能型。</li>
-      <li><b>OL</b>（オフェンシブライン）×5：前線でブロックし、走路とパスを投げる時間を作る。</li>
-    </ul>
-
-    <h3>3. ポジション（ディフェンス）</h3>
-    <ul>
-      <li><b>DL</b>（ディフェンシブライン）×4：最前線でブロックを破り、ランを止めQBに圧力をかける。</li>
-      <li><b>LB</b>（ラインバッカー）×3：中盤を担い、ラン阻止とパスカバーの両面を見る。</li>
-      <li><b>CB</b>（コーナーバック）×2：WRをマンツーマン等でカバーする俊足の選手。</li>
-      <li><b>S</b>（セーフティ）×2：最後方で、ロングパスやビッグプレーを防ぐ最終ライン。</li>
-    </ul>
-
-    <h3>4. 編成タイプ（パーソネルグルーピング）</h3>
-    <p>2桁の数字は <b>[RBの人数][TEの人数]</b> を表す慣用表記。残りがWRで、QB×1・OL×5は固定。</p>
-    <table>
-      <tr><th>表記</th><th>RB</th><th>TE</th><th>WR</th><th>狙い</th></tr>
-      <tr><td>標準 <b>11</b></td><td>1</td><td>1</td><td>3</td><td>ラン・パス両用。最も使用頻度が高い</td></tr>
-      <tr><td>ラン寄り <b>21</b></td><td>2</td><td>1</td><td>2</td><td>ブロッカーを増やし走りで押す</td></tr>
-      <tr><td>パス寄り <b>10</b></td><td>1</td><td>0</td><td>4</td><td>受け手を広げてパスで攻める</td></tr>
-    </table>
-    <p>計算式：<b>WR＝5−（RB＋TE）</b>。ダウン＆距離やフィールド位置に応じて使い分ける。</p>
-
-    <h3>5. 読み合い（カバレッジと相性）</h3>
-    <p>ディフェンスのアライメント（構え）を読み、有効なプレーを選ぶのが攻撃の駆け引き。三すくみの関係がある：</p>
-    <ul>
-      <li><b>ブリッツ</b>（QBへ追加で突進）には、<b>クイックなショートパス</b>で圧力をかわす。</li>
-      <li><b>マンカバレッジ</b>（receiver に密着）には、<b>縦のロングパス</b>で振り切る。</li>
-      <li><b>ゾーン</b>（エリア分担で守る）には、<b>ラン</b>で手薄な前線を突く。</li>
-    </ul>
-
-    <h3>6. ユニットの総入れ替え</h3>
-    <p>オフェンス11人とディフェンス11人は別メンバーで、攻守交代のたびにフィールドの11人を総入れ替えする（役割の専門分化）。さらにキック系の<b>スペシャルチーム</b>という第3のユニットもある。</p>
-
-    <button class="close" id="helpClose">とじる</button>
+    <img class="viewer-img" id="helpImage" src="" alt="">
+    <h2 id="helpTitle"></h2>
+    <p class="caption" id="helpCaption"></p>
+    <div class="viewer-nav">
+      <button class="nav-btn" id="helpPrev" type="button">◀ まえ</button>
+      <div class="page-count" id="helpPage"></div>
+      <button class="nav-btn" id="helpNext" type="button">つぎ ▶</button>
+    </div>
+    <button class="close" id="helpClose" type="button">とじる</button>
   </div>
 </div>
 
@@ -218,6 +183,90 @@
   var pendingTape = null, tapeCooldown = 2;
   var anim = null;
   var defAnim = null;
+  var HELP_TOPICS = [
+    {
+      img: "help/01-field.jpg",
+      title: "フィールドを知ろう",
+      caption: "アメリカンフットボールは、たての長さ<b>100ヤード</b>の緑のフィールドで戦うよ。両はしの色のついた場所が「<b>エンドゾーン</b>」。ここにボールを持ちこむと得点だ。りょうがわには高い「<b>ゴールポスト</b>」が立っていて、キックでボールを通すと点が入る。フィールドには5ヤードごとに白い線が引かれていて、いまどこまで進んだかがわかるよ。"
+    },
+    {
+      img: "help/02-offense.jpg",
+      title: "オフェンス（こうげき）ってなに？",
+      caption: "ボールを持っているチームが「<b>オフェンス（攻撃）</b>」。前にボールを進めて、相手のエンドゾーンを目指すよ。走ってすすむ「<b>ラン</b>」と、投げてすすむ「<b>パス</b>」の2つが基本。仲間の「<b>ブロッカー</b>」が相手をふせいで、ボールを持つ選手の道をつくる。4回のチャンス（<b>ダウン</b>）で10ヤード進めば、また新しい4回がもらえるんだ。"
+    },
+    {
+      img: "help/03-defense.jpg",
+      title: "ディフェンス（しゅび）ってなに？",
+      caption: "ボールを持っていないチームが「<b>ディフェンス（守備）</b>」。相手が前に進むのをジャマして、止めるのが仕事だよ。ボールを持つ選手にタッチして「<b>タックル</b>」で止めたり、パスをはじいたり、うばったり（<b>インターセプト</b>）する。相手を10ヤード進ませずに4回止めれば、こんどは自分たちがボールをもらえる。こうげきは点を取る役、しゅびは取らせない役なんだ。"
+    },
+    {
+      img: "help/04-down.jpg",
+      title: "4ダウンで10ヤード",
+      caption: "オフェンスには、前に進むための<b>4回のチャンス</b>があるよ。これを「<b>ダウン</b>」というんだ。4回の合計で<b>10ヤード</b>進めたら大成功！　また新しい4回のチャンス（<b>ファーストダウン</b>）がもらえて、どんどん前へ進めるよ。フィールドの光る線が「あと10ヤード」の目印だ。"
+    },
+    {
+      img: "help/05-score.jpg",
+      title: "点の取りかた",
+      caption: "ボールを相手の<b>エンドゾーン</b>まで運ぶと「<b>タッチダウン</b>」で<b>6点</b>！　そのあとのキックが決まればさらに<b>1点</b>（合わせて7点）。遠くて届かないときは、キックでゴールポストを通す「<b>フィールドゴール</b>」で<b>3点</b>ねらえるよ。守りが相手を相手陣のエンドゾーンでつかまえる「<b>セーフティ</b>」は<b>2点</b>だ。"
+    },
+    {
+      img: "help/06-turnover.jpg",
+      title: "攻守交代（ターンオーバー）",
+      caption: "つぎのどれかが起きると、ボールが相手チームにうつるよ。これを「<b>ターンオーバー（攻守交代）</b>」というんだ。①4回のチャンスで10ヤード進めなかった　②投げたパスを相手にとられる（<b>インターセプト</b>）　③持っていたボールを落としてうばわれる（<b>ファンブル</b>）。うまく進めないときは、わざとキックで遠くへ返す「<b>パント</b>」を選ぶこともあるよ。"
+    },
+    {
+      img: "help/07-off-positions.jpg",
+      title: "オフェンスの並びかた",
+      caption: "オフェンスは<b>11人</b>で決まった形に並ぶよ。まん中の前線に<b>OL（オフェンシブライン）が5人</b>ならんで、かべを作る。そのうしろに司令塔の<b>QB</b>。ボールを持って走る<b>RB</b>、パスを捕る<b>WR</b>、走ってもブロックしてもいい<b>TE</b>が、左右に広がって位置につくんだ。"
+    },
+    {
+      img: "help/08-off-roles.jpg",
+      title: "オフェンスの役割",
+      caption: "<b>QB（クォーターバック）</b>は作戦の司令塔。パスを投げる。<b>RB（ランニングバック）</b>はボールを持って走る主役。<b>WR（ワイドレシーバー）</b>は足が速く、パスを捕るのが得意。<b>TE（タイトエンド）</b>はブロックも捕球もできる万能タイプ。<b>OL</b>は体が大きく、前線でかべを作って仲間を守るよ。役割ごとに体つきもちがうんだ。"
+    },
+    {
+      img: "help/09-def-positions.jpg",
+      title: "ディフェンスの並びかた",
+      caption: "ディフェンスも<b>11人</b>。前から順に、最前線の<b>DL（ディフェンシブライン）が4人</b>、中盤の<b>LB（ラインバッカー）が3人</b>、外側で速い<b>CB（コーナーバック）が2人</b>、いちばん後ろを守る<b>S（セーフティ）が2人</b>。前・中・後ろの3つの層で、相手の攻撃を止めるよ。"
+    },
+    {
+      img: "help/10-def-layers.jpg",
+      title: "守備の3つの層",
+      caption: "ディフェンスは<b>3つの層</b>で守るとおぼえよう。<b>前の層（DL）</b>は相手のかべを破ってランを止め、QBにプレッシャーをかける。<b>中の層（LB）</b>はランもパスも見て、走って追いかける。<b>後ろの層（S・CB）</b>は、大きく投げられるロングパスをふせぐ最後のとりで。前・中・後ろで役割分担しているんだ。"
+    },
+    {
+      img: "help/11-formations.jpg",
+      title: "オフェンスの隊形",
+      caption: "同じ11人でも、<b>並びかた（隊形）</b>を変えると作戦が変わるよ。<b>ショットガン</b>はQBが後ろに構えてパス向き。<b>アイ</b>はたてに並んで力強いラン向き。<b>シングルバック</b>はラン・パス両方いける万能型。<b>ゴールライン</b>はぎゅっと密集して、あと少しを押しこむ形だ。"
+    },
+    {
+      img: "help/12-plays.jpg",
+      title: "オフェンスのプレー",
+      caption: "攻めかたは大きく3つ。<b>ラン</b>は走って前進、確実だけど少しずつ。<b>ショートパス</b>は近くへ短く投げる、成功しやすい。<b>ロングパス</b>は遠くへ大きく投げる、決まれば一気だけどリスクも大きい。相手の守りを見て、いちばん通りそうなプレーを選ぶのが監督の腕の見せどころ！"
+    },
+    {
+      img: "help/13-def-tactics.jpg",
+      title: "ディフェンスの作戦",
+      caption: "守りにも作戦があるよ。<b>マン（マンツーマン）</b>は、受け手ひとりひとりに味方をぴったりつける守り。<b>ゾーン</b>は、エリア（場所）を分担して広く守る。<b>ブリッツ</b>は、いつもより多くの選手でQBへ一気に突進して、投げるひまをあたえない強気の作戦だ。"
+    },
+    {
+      img: "help/14-matchup.jpg",
+      title: "読み合い（じゃんけんの関係）",
+      caption: "攻めと守りには、じゃんけんのような<b>相性</b>があるよ。<b>ブリッツ</b>には、すばやい<b>ショートパス</b>でかわす。<b>マン</b>には、たての<b>ロングパス</b>で振り切る。<b>ゾーン</b>には、手うすな前を<b>ラン</b>で突く。相手の構えを読んで、勝てるプレーを選ぼう。これがフットボールのいちばんの駆け引きだ！"
+    },
+    {
+      img: "help/15-personnel.jpg",
+      title: "選手の組み合わせ（編成）",
+      caption: "攻撃の11人は、<b>RBとTEの人数</b>で組み合わせを変えられるよ。数字は「<b>RBの数・TEの数</b>」の意味。<b>11</b>＝RB1・TE1でラン・パス両用（いちばん使う）。<b>21</b>＝RB2・TE1でブロッカーを増やしてラン重視。<b>10</b>＝RB1・TE0で受け手を広げてパス重視。残りはぜんぶWRになるよ（QB1・OL5は固定）。"
+    },
+    {
+      img: "help/16-special.jpg",
+      title: "スペシャルチーム（キックの専門家）",
+      caption: "攻撃・守備とはべつに、<b>キック専門の第3のチーム</b>があるよ。これが「<b>スペシャルチーム</b>」。遠くからねらう<b>フィールドゴール</b>、うまく進めないときに遠くへ返す<b>パント</b>、試合はじめの<b>キックオフ</b>など、キックの場面で登場する。地味だけど、試合の流れを大きく変える大事な役目なんだ。"
+    }
+  ];
+  window.HELP_TOPICS = HELP_TOPICS;
+  var helpIndex = 0;
   var fgKick = null;
   var fgMeter = null;
   var fgView = false;   // true の間は updateCamera がゴールポスト正面視点を使う
@@ -2930,13 +2979,62 @@
     resetGame();
   };
 
-  // ヘルプ／教材ページの開閉
-  document.getElementById("helpBtn").onclick = function () {
+  function renderHelpTopic() {
+    var topic = HELP_TOPICS[helpIndex] || HELP_TOPICS[0];
+    var img = document.getElementById("helpImage");
+    var title = document.getElementById("helpTitle");
+    var caption = document.getElementById("helpCaption");
+    var page = document.getElementById("helpPage");
+    var prev = document.getElementById("helpPrev");
+    var next = document.getElementById("helpNext");
+    if (!topic || !img || !title || !caption || !page || !prev || !next) return;
+
+    img.src = topic.img;
+    img.alt = topic.title;
+    title.textContent = topic.title;
+    caption.innerHTML = topic.caption;
+    page.textContent = (helpIndex + 1) + " / " + HELP_TOPICS.length;
+    prev.disabled = helpIndex === 0;
+    next.disabled = helpIndex >= HELP_TOPICS.length - 1;
+  }
+
+  function openHelp() {
+    helpIndex = 0;
+    renderHelpTopic();
     document.getElementById("help").style.display = "block";
-  };
-  document.getElementById("helpClose").onclick = function () {
+  }
+
+  function closeHelp() {
     document.getElementById("help").style.display = "none";
-  };
+  }
+
+  function moveHelp(delta) {
+    var nextIndex = helpIndex + delta;
+    if (nextIndex < 0 || nextIndex >= HELP_TOPICS.length) return;
+    helpIndex = nextIndex;
+    renderHelpTopic();
+  }
+
+  // ヘルプ／教材ページの開閉
+  document.getElementById("helpBtn").onclick = openHelp;
+  document.getElementById("helpPrev").onclick = function () { moveHelp(-1); };
+  document.getElementById("helpNext").onclick = function () { moveHelp(1); };
+  document.getElementById("helpClose").onclick = closeHelp;
+  window.addEventListener("keydown", function (e) {
+    var help = document.getElementById("help");
+    if (!help || help.style.display !== "block") return;
+    if (renderer && e.target === renderer.domElement) return;
+    if (e.key === "ArrowLeft") {
+      moveHelp(-1);
+      e.preventDefault();
+    } else if (e.key === "ArrowRight") {
+      moveHelp(1);
+      e.preventDefault();
+    } else if (e.key === "Escape") {
+      closeHelp();
+      e.preventDefault();
+    }
+  });
 
   // プレーログの開閉
   document.getElementById("logBtn").onclick = function () {
