@@ -34,6 +34,14 @@
   #start { position: absolute; inset: 0; background: #bfe3f2; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; }
   #start h1 { font-size: 34px; color: #2f6b3c; } #start p { color: #5a6b4a; margin: 8px 0 22px; font-size: 15px; }
   #start .ball { font-size: 64px; }
+  #start.demo { background: linear-gradient(180deg, rgba(10,15,8,.66), rgba(10,15,8,.40) 36%, rgba(10,15,8,.40) 64%, rgba(10,15,8,.66)); }
+  #start.demo h1 { color: #ffffff; text-shadow: 0 2px 10px rgba(0,0,0,.55); }
+  #start.demo p { color: #eef7e3; text-shadow: 0 1px 6px rgba(0,0,0,.55); }
+  #demoBadge { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 11; display: none; background: rgba(10,15,8,.62); color: #fff; letter-spacing: .22em; font-size: 12px; font-weight: 700; padding: 6px 16px; border-radius: 999px; border: 1px solid rgba(255,255,255,.45); pointer-events: none; }
+  body.demo-active #demoBadge { display: block; }
+  body.demo-active #info, body.demo-active #score, body.demo-active #views, body.demo-active #helpWrap, body.demo-active #timeoutWrap, body.demo-active #playerInfo, body.demo-active #playLog { display: none !important; }
+  body.demo-active #panel { display: block; z-index: 11; pointer-events: none; }
+  body.demo-active #tapNext, body.demo-active #cards, body.demo-active #personnelBtn { display: none !important; }
   .hint { font-size: 12px; opacity: .75; }
   #tapNext { display: none; margin-top: 8px; text-align: center; font-size: 14px; font-weight: 700; color: #2f4d22; background: #ffe9b8; border: 2px solid #ffd166; border-radius: 10px; padding: 9px; cursor: pointer; animation: tapPulse 1s ease-in-out infinite; }
   #personnelBtn { display: none; margin-top: 8px; text-align: center; font-size: 13px; font-weight: 700; color: #234; background: #dfeefc; border: 2px solid #8fbce6; border-radius: 10px; padding: 8px; cursor: pointer; }
@@ -103,6 +111,7 @@
 
 <div class="hud" id="info"><div class="pill"><div id="downdist">1st &amp; 10</div><div id="yardline">自陣30ヤード</div></div></div>
 <div class="hud" id="score"><div class="sb"><span>うちのチーム</span><span class="n home" id="homeS">0</span><span style="opacity:.5">—</span><span class="n away" id="awayS">0</span><span>あいて</span></div></div>
+<div id="demoBadge">DEMO</div>
 <div class="hud" id="views">
   <button data-v="quarter" class="on">俯瞰</button>
   <button data-v="top">真上</button>
@@ -292,8 +301,12 @@
   var autoContinueTimer = null;
   var currentContinueGo = null;
   var autoAdvanceOn = loadAutoAdvanceSetting();
-  var animTurbo = 1;   // アニメ時間の倍率(自動E2E高速化用・既定1=通常)。結果は乱数依存で不変。
+  var NORMAL_TEMPO = 2;   // 通常プレー/デモのアニメ時間倍率（1=素の速さ, 2=2倍ゆっくり）。結果は乱数依存で不変。
+  var animTurbo = NORMAL_TEMPO;
   var unitTransition = null; // 攻守交代時の入退場演出（見た目のみ）
+  var demoRunning = false;
+  var demoTimer = null;
+  var demoGen = 0;
   var view = "quarter";
   var camPos = new THREE.Vector3(), camTarget = new THREE.Vector3();
   var cameraBlend = null, cameraModeKey = "";
@@ -2993,6 +3006,7 @@
   }
 
   document.getElementById("startBtn").onclick = function () {
+    stopDemo();
     document.getElementById("start").style.display = "none";
     resetGame();
   };
@@ -3097,6 +3111,68 @@
     var pinfo = document.getElementById("playerInfo");
     if (pinfo) pinfo.onclick = hidePlayerInfo;
   })();
+
+  function sleepDemo(ms) {
+    return new Promise(function (r) { demoTimer = setTimeout(r, ms); });
+  }
+
+  async function demoLoop() {
+    var myGen = demoGen;
+    animTurbo = NORMAL_TEMPO;
+    while (demoRunning && myGen === demoGen) {
+      var seed = (Math.floor(Math.random() * 1e9)) >>> 0;
+      enableReplay(seed);
+      resetGame();
+      var steps = 0;
+      while (demoRunning && myGen === demoGen && !state.gameEnded && steps < 6000) {
+        var tap = document.getElementById("tapNext");
+        if (tap && tap.style.display === "block") {
+          await sleepDemo(2600);
+          if (!demoRunning || myGen !== demoGen) break;
+          if (tap.onclick) { try { tap.onclick(); } catch (e) {} }
+          steps++;
+          continue;
+        }
+        var cs = document.getElementById("cards").children;
+        if (cs.length > 0) {
+          await sleepDemo(2100);
+          if (!demoRunning || myGen !== demoGen) break;
+          var i = Math.floor(Math.random() * cs.length) % cs.length;
+          var card = cs[i];
+          if (card && card.onclick) { try { card.onclick(); } catch (e) {} }
+          steps++;
+          continue;
+        }
+        await sleepDemo(90);
+        steps++;
+      }
+      if (!demoRunning || myGen !== demoGen) break;
+      await sleepDemo(2600);
+    }
+  }
+
+  function startDemo() {
+    if (demoRunning) return;
+    demoRunning = true;
+    demoGen++;
+    if (document.body) document.body.classList.add("demo-active");
+    var start = document.getElementById("start");
+    if (start) start.classList.add("demo");
+    demoLoop();
+  }
+
+  function stopDemo() {
+    demoRunning = false;
+    demoGen++;
+    if (demoTimer) { clearTimeout(demoTimer); demoTimer = null; }
+    if (typeof stopAutoContinue === "function") stopAutoContinue();
+    if (continueTimer) { clearTimeout(continueTimer); continueTimer = null; }
+    disableReplay();
+    animTurbo = NORMAL_TEMPO;
+    if (document.body) document.body.classList.remove("demo-active");
+    var start = document.getElementById("start");
+    if (start) start.classList.remove("demo");
+  }
 
   // ===== 自動プレー（実ブラウザで N 試合をランダムにプレーし、ログをファイルへ保存）=====
   // 一部環境(Apple Silicon)で Playwright/Chromium が起動時にクラッシュするため、外部自動操作に
@@ -3249,6 +3325,12 @@
       if (_ap != null) autoPlay(parseInt(_ap, 10) || 10, { postUrl: _q.get("post") });
     }
   } catch (e) { if (typeof console !== "undefined") console.warn("autoplay trigger skipped", e); }
+  try {
+    if (typeof location !== "undefined") {
+      var _demoQ = new URLSearchParams(location.search);
+      if (_demoQ.get("autoplay") == null) startDemo();
+    }
+  } catch (e) { if (typeof console !== "undefined") console.warn("demo start skipped", e); }
 })();
 </script>
 </body>
