@@ -49,6 +49,34 @@
     #panel { width: calc(100vw - 32px); max-width: none; }
     .bubble { max-width: 100%; }
   }
+  @media (max-height: 500px) {
+    /* 上部HUDを小型化して #info と #score の重なりを防ぐ */
+    #info { top: 8px; left: 8px; }
+    #downdist { font-size: 15px; }
+    #yardline { font-size: 10px; margin-top: 1px; }
+    .pill { padding: 4px 9px; }
+    #score { top: 8px; }
+    #score .sb { padding: 4px 10px; gap: 8px; font-size: 11px; }
+    #score .n { font-size: 15px; }
+    #views { top: 8px; right: 8px; gap: 5px; }
+    #views button { padding: 5px 8px; font-size: 11px; }
+    #helpWrap { top: 40px; right: 8px; }
+    #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn { padding: 5px 8px; font-size: 11px; }
+    #timeoutWrap { top: 72px; right: 8px; }
+    #timeoutBtn { padding: 5px 8px; font-size: 11px; }
+    #playerInfo { top: 72px; left: 8px; }
+    #playLog { top: 72px; right: 8px; }
+
+    /* 下部パネルをコンパクト化し、カードは横スクロールで縦あふれを回避 */
+    #panel { bottom: 8px; left: 8px; width: calc(100vw - 16px); max-width: none; }
+    .bubble { font-size: 12px; padding: 6px 11px; margin-bottom: 8px; }
+    .cards { flex-wrap: nowrap; overflow-x: auto; gap: 8px; padding-bottom: 4px; }
+    .card { width: 104px; flex: 0 0 auto; padding: 8px; }
+    .card .ico { font-size: 20px; }
+    .card .t { font-size: 12px; margin-top: 1px; }
+    .card .d { font-size: 10px; margin-top: 2px; }
+    #tapNext, #personnelBtn { font-size: 12px; padding: 7px; margin-top: 6px; }
+  }
   @keyframes tapPulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
   #helpWrap { top: 52px; right: 14px; pointer-events: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: calc(100vw - 28px); }
   #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
