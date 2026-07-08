@@ -42,9 +42,8 @@
     .bubble { max-width: 100%; }
   }
   @keyframes tapPulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
-  #helpWrap { top: 52px; right: 14px; pointer-events: auto; }
-  #helpBtn, #logBtn, #autoAdvanceBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
-  #helpWrap button + button { margin-left: 6px; }
+  #helpWrap { top: 52px; right: 14px; pointer-events: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: calc(100vw - 28px); }
+  #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
   #autoAdvanceBtn.on { background: #ee8e3c; border-color: #ee8e3c; }
   #playLog { position: absolute; top: 92px; right: 14px; z-index: 18; display: none; pointer-events: auto; background: rgba(20,30,16,.94); color: #d9f0c8; border-radius: 10px; padding: 10px 12px; width: min(380px, 92vw); max-height: 60vh; overflow-y: auto; font-size: 11px; line-height: 1.5; font-family: ui-monospace, monospace; }
   #playLog .lg-head { display: flex; justify-content: space-between; align-items: center; color: #fff; font-weight: 700; margin-bottom: 6px; font-family: inherit; }
@@ -109,7 +108,7 @@
   <button data-v="top">真上</button>
   <button data-v="player">選手視点</button>
 </div>
-<div class="hud" id="helpWrap"><button id="helpBtn">？ ヘルプ</button><button id="logBtn">ログ</button><button id="autoAdvanceBtn">自動すすむ: OFF</button></div>
+<div class="hud" id="helpWrap"><button id="helpBtn">？ アメフトのルール</button><button id="guideBtn">？ ゲームのすすめ方</button><button id="logBtn">ログ</button><button id="autoAdvanceBtn">自動すすむ: OFF</button></div>
 <div id="playLog"></div>
 <div class="hud" id="timeoutWrap"><button id="timeoutBtn">タイムアウト 3</button></div>
 <div id="playerInfo"></div>
@@ -207,12 +206,17 @@
     {
       img: "help/05-score.jpg",
       title: "点の取りかた",
-      caption: "ボールを相手の<b>エンドゾーン</b>まで運ぶと「<b>タッチダウン</b>」で<b>6点</b>！　そのあとのキックが決まればさらに<b>1点</b>（合わせて7点）。遠くて届かないときは、キックでゴールポストを通す「<b>フィールドゴール</b>」で<b>3点</b>ねらえるよ。守りが相手を相手陣のエンドゾーンでつかまえる「<b>セーフティ</b>」は<b>2点</b>だ。"
+      caption: "ボールを相手の<b>エンドゾーン</b>まで運ぶと「<b>タッチダウン</b>」で<b>6点</b>！　そのあとのキックが決まればさらに<b>1点</b>（合わせて7点）。もっと強気に、もう一度エンドゾーンをねらう「<b>2ポイントコンバージョン</b>」を決めれば<b>2点</b>（合わせて8点）だ。遠くて届かないときは、キックでゴールポストを通す「<b>フィールドゴール</b>」で<b>3点</b>ねらえるよ。守りが相手を相手陣のエンドゾーンでつかまえる「<b>セーフティ</b>」は<b>2点</b>だ。"
     },
     {
       img: "help/06-turnover.jpg",
       title: "攻守交代（ターンオーバー）",
       caption: "つぎのどれかが起きると、ボールが相手チームにうつるよ。これを「<b>ターンオーバー（攻守交代）</b>」というんだ。①4回のチャンスで10ヤード進めなかった　②投げたパスを相手にとられる（<b>インターセプト</b>）　③持っていたボールを落としてうばわれる（<b>ファンブル</b>）。うまく進めないときは、わざとキックで遠くへ返す「<b>パント</b>」を選ぶこともあるよ。"
+    },
+    {
+      img: "help/17-penalty.jpg",
+      title: "反則（はんそく）",
+      caption: "ルールをやぶると「<b>反則（はんそく）</b>」になるよ。よくあるのは、スナップ前に動いたり早く飛び出してしまう「<b>オフサイド</b>」など。反則があると、<b>ヤードの罰（ばつ）</b>で前や後ろに下げられたり、<b>ダウンをやり直し</b>になったりする。しんぱんが<b>黄色いフラッグ</b>を投げたら反則の合図だよ。ルールを守って、フェアにプレーしよう！"
     },
     {
       img: "help/07-off-positions.jpg",
@@ -266,7 +270,20 @@
     }
   ];
   window.HELP_TOPICS = HELP_TOPICS;
+  var PLACEHOLDER_IMG = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="788"><rect width="100%" height="100%" fill="#f0f7e6"/><text x="50%" y="50%" fill="#8aa06e" font-family="sans-serif" font-size="48" text-anchor="middle" dominant-baseline="middle">イラストは準備中です</text></svg>');
+  var GUIDE_TOPICS = [
+    { img: "help/guide/g01-start.jpg", title: "ゲームのはじめかた", caption: "「<b>はじめる</b>」ボタンをおすと試合スタート！ きみは<b>監督（コーチ）</b>として、味方チームに作戦を出すよ。<b>4回のチャンス（ダウン）</b>で10ヤード進めば、また新しい4回がもらえる。目ざすは相手の<b>エンドゾーン</b>だ！" },
+    { img: "help/guide/g02-screen.jpg", title: "画面の見かた", caption: "画面の上には<b>スコア（得点）</b>と、いま何回目のチャンスか（<b>ダウン</b>）、<b>あと何ヤード</b>で成功かが出るよ。<b>ホイッスル先生</b>のふきだしが、つぎに何をすればいいか教えてくれる。まよったら、まずふきだしを読もう。" },
+    { img: "help/guide/g03-next.jpg", title: "つぎへ進むには", caption: "ふきだしを読んだら、下の「<b>▶ タップで次へ</b>」をおすと話が進むよ。右上の「<b>自動すすむ</b>」をONにすると、3秒たつと自分でつぎへ進む。ゆっくり読みたいときはOFFにしてね。" },
+    { img: "help/guide/g04-offense.jpg", title: "攻めかたを選ぶ", caption: "味方の攻撃では、①<b>編成（メンバー）</b> → ②<b>隊形（ならびかた）</b> → ③<b>プレー</b>の順で選ぶよ。プレーは<b>ラン</b>・<b>ショートパス</b>・<b>ロングパス</b>から。パスを選んだら、<b>だれに投げるか（受け手）</b>もタップで決めよう。" },
+    { img: "help/guide/g05-defense.jpg", title: "守りかたを選ぶ", caption: "相手の攻撃のときは、きみが<b>守りの作戦</b>を選ぶよ。<b>マン</b>は相手ひとりにひとりでつく守り、<b>ゾーン</b>は場所を分けて広く守る、<b>ブリッツ</b>はたくさんで攻めてパスをじゃまする強気の作戦。相手のプレーを予想して選ぼう。" },
+    { img: "help/guide/g06-kick.jpg", title: "キックをする", caption: "遠くてとどかないときは<b>キック</b>。<b>フィールドゴール</b>はゴールを通せば3点、<b>2回タップ</b>のミニゲームで「<b>ねらい</b>」と「<b>つよさ</b>」を止めて決めるよ。<b>パント</b>は相手を遠くへ押しもどすキック。タイミングよくねらいを合わせよう！" },
+    { img: "help/guide/g07-timeout.jpg", title: "タイムアウトを使う", caption: "右上の「<b>タイムアウト</b>」は、試合の時間を止める作戦だよ。1試合で<b>3回</b>まで使える。時間がのこり少ないときや、じっくり考えたいときに使うと、チャンスをむだにしないぞ。" },
+    { img: "help/guide/g08-view.jpg", title: "見る角度をかえる／ログ", caption: "画面のボタンで<b>カメラ（見る角度）</b>を切りかえられるよ。<b>ふかん</b>・<b>真上</b>・<b>選手の目線</b>など、好きな角度で観戦しよう。<b>選手をタップ</b>するとその子の情報が出る。「<b>ログ</b>」ボタンで、これまでのプレーをふりかえれるんだ。" }
+  ];
+  window.GUIDE_TOPICS = GUIDE_TOPICS;
   var helpIndex = 0;
+  var activeHelpTopics = HELP_TOPICS;
   var fgKick = null;
   var fgMeter = null;
   var fgView = false;   // true の間は updateCamera がゴールポスト正面視点を使う
@@ -1822,7 +1839,7 @@
                   (kr.kind === "fairCatch") ? "フェアキャッチ！ 自陣25ヤードから。" :
                   (kr.kind === "bigReturn") ? "ビッグリターン！ 自陣" + kr.yards + "ヤードから！" :
                   "リターン。自陣" + kr.yards + "ヤードから。";
-    setBubble("ホイッスル先生：キックオフ！ " + kindMsg);
+    setBubble("ホイッスル先生：スペシャルチーム登場！ キックオフ！ " + kindMsg);
     logPlay("キックオフ 受球=" + (receivingIsHome ? "味方" : "相手") + " " + kr.kind + " 自陣" + kr.yards);
     var losForReceiver = receivingIsHome
       ? (GOAL_NEAR + kr.yards)
@@ -2356,11 +2373,12 @@
     setActiveUnits("special");
     placeSpecialFormation(state.los, true);
     if (type === "fg") {
+      setBubble("ホイッスル先生：スペシャルチーム登場！ フィールドゴールをねらうよ。");
       startFGMinigame(who, kickStat);
     } else {
       // パント: パントリターン分を差し引く
       var dpunt = rand(30, 45) * (0.8 + 0.2 * kf);
-      setBubble(who + " がパント！ ボールが高く飛ぶ…");
+      setBubble("スペシャルチーム登場！ " + who + " がパント！ ボールが高く飛ぶ…");
       setTimeout(function () {
         var pr = window.BoxelGame.puntReturn({});
         var returnMsg = (pr.kind === "fairCatch") ? "フェアキャッチ！" : (pr.yards > 0 ? pr.yards + "ヤードリターン。" : "");
@@ -2980,7 +2998,7 @@
   };
 
   function renderHelpTopic() {
-    var topic = HELP_TOPICS[helpIndex] || HELP_TOPICS[0];
+    var topic = activeHelpTopics[helpIndex] || activeHelpTopics[0];
     var img = document.getElementById("helpImage");
     var title = document.getElementById("helpTitle");
     var caption = document.getElementById("helpCaption");
@@ -2989,16 +3007,21 @@
     var next = document.getElementById("helpNext");
     if (!topic || !img || !title || !caption || !page || !prev || !next) return;
 
+    img.onerror = function () {
+      img.onerror = null;
+      img.src = PLACEHOLDER_IMG;
+    };
     img.src = topic.img;
     img.alt = topic.title;
     title.textContent = topic.title;
     caption.innerHTML = topic.caption;
-    page.textContent = (helpIndex + 1) + " / " + HELP_TOPICS.length;
+    page.textContent = (helpIndex + 1) + " / " + activeHelpTopics.length;
     prev.disabled = helpIndex === 0;
-    next.disabled = helpIndex >= HELP_TOPICS.length - 1;
+    next.disabled = helpIndex >= activeHelpTopics.length - 1;
   }
 
-  function openHelp() {
+  function openHelp(topics) {
+    activeHelpTopics = topics || HELP_TOPICS;
     helpIndex = 0;
     renderHelpTopic();
     document.getElementById("help").style.display = "block";
@@ -3010,13 +3033,15 @@
 
   function moveHelp(delta) {
     var nextIndex = helpIndex + delta;
-    if (nextIndex < 0 || nextIndex >= HELP_TOPICS.length) return;
+    if (nextIndex < 0 || nextIndex >= activeHelpTopics.length) return;
     helpIndex = nextIndex;
     renderHelpTopic();
   }
 
   // ヘルプ／教材ページの開閉
-  document.getElementById("helpBtn").onclick = openHelp;
+  document.getElementById("helpBtn").onclick = function () { openHelp(HELP_TOPICS); };
+  var _guideBtn = document.getElementById("guideBtn");
+  if (_guideBtn) _guideBtn.onclick = function () { openHelp(GUIDE_TOPICS); };
   document.getElementById("helpPrev").onclick = function () { moveHelp(-1); };
   document.getElementById("helpNext").onclick = function () { moveHelp(1); };
   document.getElementById("helpClose").onclick = closeHelp;
