@@ -5,34 +5,56 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ボクセル・フットボール（試作）</title>
 <style>
+  :root {
+    --fs-title: 34px; --fs-lead: 15px; --fs-big: 17px;
+    --fs-hud-num: 22px; --fs-hud-sub: 13px; --fs-score-label: 14px;
+    --fs-btn: 12px; --fs-bubble: 15px; --fs-tap: 14px;
+    --fs-card-t: 15px; --fs-card-d: 11px; --ico-card: 28px;
+  }
+  @media (max-width: 899px) {
+    :root {
+      --fs-title: 29px; --fs-lead: 13px; --fs-big: 15px;
+      --fs-hud-num: 19px; --fs-hud-sub: 11px; --fs-score-label: 12px;
+      --fs-btn: 11px; --fs-bubble: 13px; --fs-tap: 12px;
+      --fs-card-t: 13px; --fs-card-d: 10px; --ico-card: 24px;
+    }
+  }
+  @media (max-width: 559px), (max-height: 500px) {
+    :root {
+      --fs-title: 24px; --fs-lead: 11px; --fs-big: 13px;
+      --fs-hud-num: 16px; --fs-hud-sub: 10px; --fs-score-label: 10px;
+      --fs-btn: 10px; --fs-bubble: 11px; --fs-tap: 11px;
+      --fs-card-t: 11px; --fs-card-d: 9px; --ico-card: 20px;
+    }
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: #bfe3f2; font-family: "Hiragino Maru Gothic ProN", "Yu Gothic", system-ui, sans-serif; }
   #c { display: block; width: 100%; height: 100%; }
   .hud { position: absolute; color: #fff; user-select: none; pointer-events: none; }
   #info { top: 14px; left: 14px; }
   .pill { background: rgba(36,48,24,.82); border-radius: 12px; padding: 8px 14px; display: inline-block; }
-  #downdist { font-size: 22px; font-weight: 700; }
-  #yardline { font-size: 13px; opacity: .85; margin-top: 2px; }
+  #downdist { font-size: var(--fs-hud-num); font-weight: 700; }
+  #yardline { font-size: var(--fs-hud-sub); opacity: .85; margin-top: 2px; }
   #score { top: 14px; left: 50%; transform: translateX(-50%); }
-  #score .sb { background: rgba(36,48,24,.82); border-radius: 12px; padding: 8px 18px; display: flex; align-items: center; gap: 12px; font-size: 14px; }
-  #score .n { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #score .sb { background: rgba(36,48,24,.82); border-radius: 12px; padding: 8px 18px; display: flex; align-items: center; gap: 12px; font-size: var(--fs-score-label); }
+  #score .n { font-size: var(--fs-hud-num); font-weight: 700; font-variant-numeric: tabular-nums; }
   .home { color: #ffd166; } .away { color: #fff; }
   #views { top: 14px; right: 14px; display: flex; gap: 6px; pointer-events: auto; }
-  #views button { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  #views button { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 10px; font-size: var(--fs-btn); cursor: pointer; font-family: inherit; }
   #views button.on { background: #ee8e3c; border-color: #ee8e3c; }
   #panel { bottom: 18px; left: 16px; width: min(480px, calc(100vw - 32px)); max-width: 480px; text-align: left; pointer-events: auto; }
-  .bubble { background: #fff; color: #2f5d2f; border-radius: 16px; padding: 10px 16px; font-size: 15px; line-height: 1.5; display: inline-block; max-width: 480px; box-shadow: 0 4px 0 rgba(0,0,0,.08); margin-bottom: 12px; }
+  .bubble { background: #fff; color: #2f5d2f; border-radius: 16px; padding: 10px 16px; font-size: var(--fs-bubble); line-height: 1.5; display: inline-block; max-width: 480px; box-shadow: 0 4px 0 rgba(0,0,0,.08); margin-bottom: 12px; }
   .bubble b { color: #d9622b; }
   .cards { display: flex; gap: 10px; justify-content: flex-start; flex-wrap: wrap; }
   .card { background: #fff; border-radius: 14px; padding: 12px 10px; width: 124px; cursor: pointer; border: 3px solid transparent; transition: transform .08s, border-color .12s; box-shadow: 0 4px 0 rgba(0,0,0,.1); }
   .card:hover { transform: translateY(-3px); border-color: #ffd166; }
-  .card .ico { font-size: 28px; }
-  .card .t { font-size: 15px; font-weight: 700; color: #2f4d22; margin-top: 2px; }
-  .card .d { font-size: 11px; color: #6b7d59; margin-top: 3px; line-height: 1.35; }
-  .big { display: inline-block; background: #ee8e3c; color: #fff; border: none; border-radius: 14px; padding: 13px 28px; font-size: 17px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 0 #b9651f; }
+  .card .ico { font-size: var(--ico-card); }
+  .card .t { font-size: var(--fs-card-t); font-weight: 700; color: #2f4d22; margin-top: 2px; }
+  .card .d { font-size: var(--fs-card-d); color: #6b7d59; margin-top: 3px; line-height: 1.35; }
+  .big { display: inline-block; background: #ee8e3c; color: #fff; border: none; border-radius: 14px; padding: 13px 28px; font-size: var(--fs-big); font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 0 #b9651f; }
   .big:active { transform: translateY(2px); box-shadow: 0 2px 0 #b9651f; }
   #start { position: absolute; inset: 0; background: #bfe3f2; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; }
-  #start h1 { font-size: 34px; color: #2f6b3c; } #start p { color: #5a6b4a; margin: 8px 0 22px; font-size: 15px; }
+  #start h1 { font-size: var(--fs-title); color: #2f6b3c; } #start p { color: #5a6b4a; margin: 8px 0 22px; font-size: var(--fs-lead); }
   #start .ball { font-size: 64px; }
   #start.demo { background: linear-gradient(180deg, rgba(10,15,8,.66), rgba(10,15,8,.40) 36%, rgba(10,15,8,.40) 64%, rgba(10,15,8,.66)); }
   #start.demo h1 { color: #ffffff; text-shadow: 0 2px 10px rgba(0,0,0,.55); }
@@ -43,43 +65,15 @@
   body.demo-active #panel { display: block; z-index: 11; pointer-events: none; }
   body.demo-active #tapNext, body.demo-active #cards, body.demo-active #personnelBtn { display: none !important; }
   .hint { font-size: 12px; opacity: .75; }
-  #tapNext { display: none; margin-top: 8px; text-align: center; font-size: 14px; font-weight: 700; color: #2f4d22; background: #ffe9b8; border: 2px solid #ffd166; border-radius: 10px; padding: 9px; cursor: pointer; animation: tapPulse 1s ease-in-out infinite; }
+  #tapNext { display: none; margin-top: 8px; text-align: center; font-size: var(--fs-tap); font-weight: 700; color: #2f4d22; background: #ffe9b8; border: 2px solid #ffd166; border-radius: 10px; padding: 9px; cursor: pointer; animation: tapPulse 1s ease-in-out infinite; }
   #personnelBtn { display: none; margin-top: 8px; text-align: center; font-size: 13px; font-weight: 700; color: #234; background: #dfeefc; border: 2px solid #8fbce6; border-radius: 10px; padding: 8px; cursor: pointer; }
   @media (max-width: 559px) {
     #panel { width: calc(100vw - 32px); max-width: none; }
     .bubble { max-width: 100%; }
   }
-  @media (max-height: 500px) {
-    /* 上部HUDを小型化して #info と #score の重なりを防ぐ */
-    #info { top: 8px; left: 8px; }
-    #downdist { font-size: 15px; }
-    #yardline { font-size: 10px; margin-top: 1px; }
-    .pill { padding: 4px 9px; }
-    #score { top: 8px; }
-    #score .sb { padding: 4px 10px; gap: 8px; font-size: 11px; }
-    #score .n { font-size: 15px; }
-    #views { top: 8px; right: 8px; gap: 5px; }
-    #views button { padding: 5px 8px; font-size: 11px; }
-    #helpWrap { top: 40px; right: 8px; }
-    #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn { padding: 5px 8px; font-size: 11px; }
-    #timeoutWrap { top: 72px; right: 8px; }
-    #timeoutBtn { padding: 5px 8px; font-size: 11px; }
-    #playerInfo { top: 72px; left: 8px; }
-    #playLog { top: 72px; right: 8px; }
-
-    /* 下部パネルをコンパクト化し、カードは横スクロールで縦あふれを回避 */
-    #panel { bottom: 8px; left: 8px; width: calc(100vw - 16px); max-width: none; }
-    .bubble { font-size: 12px; padding: 6px 11px; margin-bottom: 8px; }
-    .cards { flex-wrap: nowrap; overflow-x: auto; gap: 8px; padding-bottom: 4px; }
-    .card { width: 104px; flex: 0 0 auto; padding: 8px; }
-    .card .ico { font-size: 20px; }
-    .card .t { font-size: 12px; margin-top: 1px; }
-    .card .d { font-size: 10px; margin-top: 2px; }
-    #tapNext, #personnelBtn { font-size: 12px; padding: 7px; margin-top: 6px; }
-  }
   @keyframes tapPulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
   #helpWrap { top: 52px; right: 14px; pointer-events: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: calc(100vw - 28px); }
-  #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: var(--fs-btn); cursor: pointer; font-family: inherit; }
   #autoAdvanceBtn.on { background: #ee8e3c; border-color: #ee8e3c; }
   #playLog { position: absolute; top: 92px; right: 14px; z-index: 18; display: none; pointer-events: auto; background: rgba(20,30,16,.94); color: #d9f0c8; border-radius: 10px; padding: 10px 12px; width: min(380px, 92vw); max-height: 60vh; overflow-y: auto; font-size: 11px; line-height: 1.5; font-family: ui-monospace, monospace; }
   #playLog .lg-head { display: flex; justify-content: space-between; align-items: center; color: #fff; font-weight: 700; margin-bottom: 6px; font-family: inherit; }
@@ -90,7 +84,7 @@
   #playLog .lg-area { width: 100%; height: 120px; margin: 6px 0; font-size: 10px; font-family: ui-monospace, monospace; background: #0c1209; color: #b8e0a0; border: 1px solid rgba(255,255,255,.15); border-radius: 6px; }
   #playLog .lg-sub { color: #fff; font-weight: 700; margin: 6px 0 4px; }
   #timeoutWrap { top: 92px; right: 14px; pointer-events: auto; }
-  #timeoutBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  #timeoutBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: var(--fs-btn); cursor: pointer; font-family: inherit; }
   #timeoutBtn:disabled { opacity: .45; cursor: default; }
   #help { position: absolute; inset: 0; background: rgba(20,30,16,.92); z-index: 20; display: none; overflow-y: auto; pointer-events: auto; padding: 24px 14px 40px; }
   #help .sheet { background: #fff; color: #2f4d22; max-width: 920px; margin: 0 auto; border-radius: 16px; padding: 18px; line-height: 1.65; }
@@ -125,6 +119,54 @@
   #fgOverlay .fgo-labels { display: flex; justify-content: space-between; font-size: 11px; color: rgba(255,255,255,.55); margin-top: 5px; }
   #fgOverlay .fgo-btn { display: block; width: 100%; margin-top: 12px; background: #ee8e3c; color: #fff; border: none; border-radius: 12px; padding: 12px; font-size: 17px; font-weight: 700; cursor: pointer; font-family: inherit; box-shadow: 0 4px 0 #b9651f; }
   #fgOverlay .fgo-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #b9651f; }
+  @media (max-width: 559px) {
+    /* 1段目: ダウン表示(左) と スコア(右) */
+    #info { top: 6px; left: 6px; max-width: 54vw; }
+    #downdist { line-height: 1.25; }
+    #yardline { margin-top: 1px; }
+    .pill { padding: 5px 9px; }
+    #score { top: 6px; left: auto; right: 6px; transform: none; }
+    #score .sb { padding: 5px 8px; gap: 6px; }
+
+    /* 2段目: タイムアウト(左) と ビュー切替(右) */
+    #timeoutWrap { top: 76px; left: 6px; right: auto; }
+    #timeoutBtn { padding: 4px 7px; }
+    #views { top: 76px; right: 6px; gap: 4px; }
+    #views button { padding: 4px 7px; }
+
+    /* 3段目: ヘルプ系ボタン（右寄せ・小さく1段に収める） */
+    #helpWrap { top: 110px; right: 6px; gap: 4px; max-width: calc(100vw - 12px); }
+    #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn { padding: 4px 7px; }
+
+    /* 開閉パネルはインジケータ帯の下へ */
+    #playerInfo { top: 140px; left: 6px; }
+    #playLog { top: 140px; right: 6px; }
+  }
+  @media (max-height: 500px) {
+    /* 上部HUDを小型化して #info と #score の重なりを防ぐ */
+    #info { top: 8px; left: 8px; }
+    #yardline { margin-top: 1px; }
+    .pill { padding: 4px 9px; }
+    #score { top: 8px; }
+    #score .sb { padding: 4px 10px; gap: 8px; }
+    #views { top: 8px; right: 8px; gap: 5px; }
+    #views button { padding: 5px 8px; }
+    #helpWrap { top: 40px; right: 8px; }
+    #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn { padding: 5px 8px; }
+    #timeoutWrap { top: 72px; right: 8px; }
+    #timeoutBtn { padding: 5px 8px; }
+    #playerInfo { top: 72px; left: 8px; }
+    #playLog { top: 72px; right: 8px; }
+
+    /* 下部パネルをコンパクト化し、カードは横スクロールで縦あふれを回避 */
+    #panel { bottom: 8px; left: 8px; width: calc(100vw - 16px); max-width: none; }
+    .bubble { padding: 6px 11px; margin-bottom: 8px; }
+    .cards { flex-wrap: nowrap; overflow-x: auto; gap: 8px; padding-bottom: 4px; }
+    .card { width: 104px; flex: 0 0 auto; padding: 8px; }
+    .card .t { margin-top: 1px; }
+    .card .d { margin-top: 2px; }
+    #tapNext, #personnelBtn { padding: 7px; margin-top: 6px; }
+  }
 </style>
 </head>
 <body>
