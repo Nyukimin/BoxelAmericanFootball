@@ -2,7 +2,15 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#2f6b3c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="アメフト">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="assets/icon-192.png">
 <title>ボクセル・フットボール（試作）</title>
 <style>
   :root {
@@ -42,7 +50,7 @@
   #views { top: 14px; right: 14px; display: flex; gap: 6px; pointer-events: auto; }
   #views button { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 10px; font-size: var(--fs-btn); cursor: pointer; font-family: inherit; }
   #views button.on { background: #ee8e3c; border-color: #ee8e3c; }
-  #panel { bottom: 18px; left: 16px; width: min(480px, calc(100vw - 32px)); max-width: 480px; text-align: left; pointer-events: auto; }
+  #panel { bottom: calc(18px + env(safe-area-inset-bottom)); left: calc(16px + env(safe-area-inset-left)); width: min(480px, calc(100vw - 32px)); max-width: 480px; text-align: left; pointer-events: auto; }
   .bubble { background: #fff; color: #2f5d2f; border-radius: 16px; padding: 10px 16px; font-size: var(--fs-bubble); line-height: 1.5; display: inline-block; max-width: 480px; box-shadow: 0 4px 0 rgba(0,0,0,.08); margin-bottom: 12px; }
   .bubble b { color: #d9622b; }
   .cards { display: flex; gap: 10px; justify-content: flex-start; flex-wrap: wrap; }
@@ -73,7 +81,7 @@
   }
   @keyframes tapPulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
   #helpWrap { top: 52px; right: 14px; pointer-events: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: calc(100vw - 28px); }
-  #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: var(--fs-btn); cursor: pointer; font-family: inherit; }
+  #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn, #fsBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: var(--fs-btn); cursor: pointer; font-family: inherit; }
   #autoAdvanceBtn.on { background: #ee8e3c; border-color: #ee8e3c; }
   #playLog { position: absolute; top: 92px; right: 14px; z-index: 18; display: none; pointer-events: auto; background: rgba(20,30,16,.94); color: #d9f0c8; border-radius: 10px; padding: 10px 12px; width: min(380px, 92vw); max-height: 60vh; overflow-y: auto; font-size: 11px; line-height: 1.5; font-family: ui-monospace, monospace; }
   #playLog .lg-head { display: flex; justify-content: space-between; align-items: center; color: #fff; font-weight: 700; margin-bottom: 6px; font-family: inherit; }
@@ -121,22 +129,22 @@
   #fgOverlay .fgo-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #b9651f; }
   @media (max-width: 559px) {
     /* 1段目: ダウン表示(左) と スコア(右) */
-    #info { top: 6px; left: 6px; max-width: 54vw; }
+    #info { top: calc(6px + env(safe-area-inset-top)); left: calc(6px + env(safe-area-inset-left)); max-width: 54vw; }
     #downdist { line-height: 1.25; }
     #yardline { margin-top: 1px; }
     .pill { padding: 5px 9px; }
-    #score { top: 6px; left: auto; right: 6px; transform: none; }
+    #score { top: calc(6px + env(safe-area-inset-top)); left: auto; right: calc(6px + env(safe-area-inset-right)); transform: none; }
     #score .sb { padding: 5px 8px; gap: 6px; }
 
     /* 2段目: タイムアウト(左) と ビュー切替(右) */
-    #timeoutWrap { top: 76px; left: 6px; right: auto; }
+    #timeoutWrap { top: calc(76px + env(safe-area-inset-top)); left: calc(6px + env(safe-area-inset-left)); right: auto; }
     #timeoutBtn { padding: 4px 7px; }
-    #views { top: 76px; right: 6px; gap: 4px; }
+    #views { top: calc(76px + env(safe-area-inset-top)); right: calc(6px + env(safe-area-inset-right)); gap: 4px; }
     #views button { padding: 4px 7px; }
 
     /* 3段目: ヘルプ系ボタン（右寄せ・小さく1段に収める） */
-    #helpWrap { top: 110px; right: 6px; gap: 4px; max-width: calc(100vw - 12px); }
-    #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn { padding: 4px 7px; }
+    #helpWrap { top: calc(110px + env(safe-area-inset-top)); right: calc(6px + env(safe-area-inset-right)); gap: 4px; max-width: calc(100vw - 12px); }
+    #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn, #fsBtn { padding: 4px 7px; }
 
     /* 開閉パネルはインジケータ帯の下へ */
     #playerInfo { top: 140px; left: 6px; }
@@ -144,22 +152,22 @@
   }
   @media (max-height: 500px) {
     /* 上部HUDを小型化して #info と #score の重なりを防ぐ */
-    #info { top: 8px; left: 8px; }
+    #info { top: calc(8px + env(safe-area-inset-top)); left: calc(8px + env(safe-area-inset-left)); }
     #yardline { margin-top: 1px; }
     .pill { padding: 4px 9px; }
-    #score { top: 8px; }
+    #score { top: calc(8px + env(safe-area-inset-top)); }
     #score .sb { padding: 4px 10px; gap: 8px; }
-    #views { top: 8px; right: 8px; gap: 5px; }
+    #views { top: calc(8px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); gap: 5px; }
     #views button { padding: 5px 8px; }
-    #helpWrap { top: 40px; right: 8px; }
-    #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn { padding: 5px 8px; }
-    #timeoutWrap { top: 72px; right: 8px; }
+    #helpWrap { top: calc(40px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); }
+    #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn, #fsBtn { padding: 5px 8px; }
+    #timeoutWrap { top: calc(72px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); }
     #timeoutBtn { padding: 5px 8px; }
     #playerInfo { top: 72px; left: 8px; }
     #playLog { top: 72px; right: 8px; }
 
     /* 下部パネルをコンパクト化し、カードは横スクロールで縦あふれを回避 */
-    #panel { bottom: 8px; left: 8px; width: calc(100vw - 16px); max-width: none; }
+    #panel { bottom: calc(8px + env(safe-area-inset-bottom)); left: calc(8px + env(safe-area-inset-left)); width: calc(100vw - 16px); max-width: none; }
     .bubble { padding: 6px 11px; margin-bottom: 8px; }
     .cards { flex-wrap: nowrap; overflow-x: auto; gap: 8px; padding-bottom: 4px; }
     .card { width: 104px; flex: 0 0 auto; padding: 8px; }
@@ -187,7 +195,7 @@
   <button data-v="top">真上</button>
   <button data-v="player">選手視点</button>
 </div>
-<div class="hud" id="helpWrap"><button id="helpBtn">？ アメフトのルール</button><button id="guideBtn">？ ゲームのすすめ方</button><button id="logBtn">ログ</button><button id="autoAdvanceBtn">自動すすむ: OFF</button></div>
+<div class="hud" id="helpWrap"><button id="helpBtn">？ アメフトのルール</button><button id="guideBtn">？ ゲームのすすめ方</button><button id="logBtn">ログ</button><button id="autoAdvanceBtn">自動すすむ: OFF</button><button id="fsBtn">全画面</button></div>
 <div id="playLog"></div>
 <div class="hud" id="timeoutWrap"><button id="timeoutBtn">タイムアウト 3</button></div>
 <div id="playerInfo"></div>
@@ -3021,6 +3029,20 @@
       camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
+    (function(){
+      function refit(){
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+      if (typeof window !== "undefined" && window.visualViewport && window.visualViewport.addEventListener) {
+        window.visualViewport.addEventListener("resize", refit);
+        window.visualViewport.addEventListener("scroll", refit);
+      }
+      if (typeof window !== "undefined" && window.addEventListener) {
+        window.addEventListener("orientationchange", function(){ setTimeout(refit, 200); });
+      }
+    })();
 
     clock = new THREE.Clock();
     updateHUD();
@@ -3168,6 +3190,29 @@
         if (tap && tap.style.display === "block") tap.textContent = "▶ タップで次へ";
       }
     };
+  })();
+
+  (function(){
+    var fsBtn = document.getElementById("fsBtn");
+    if (!fsBtn) return;
+    var docEl = document.documentElement;
+    var canFS = !!(docEl && (docEl.requestFullscreen || docEl.webkitRequestFullscreen));
+    var standalone = (typeof navigator !== "undefined" && navigator.standalone === true) ||
+                     (typeof window !== "undefined" && window.matchMedia && (window.matchMedia("(display-mode: standalone)").matches || window.matchMedia("(display-mode: fullscreen)").matches));
+    if (!canFS || standalone) { fsBtn.style.display = "none"; return; }
+    fsBtn.onclick = function(){
+      var d = document;
+      if (d.fullscreenElement || d.webkitFullscreenElement) {
+        if (d.exitFullscreen || d.webkitExitFullscreen) (d.exitFullscreen || d.webkitExitFullscreen).call(d);
+      } else {
+        (docEl.requestFullscreen || docEl.webkitRequestFullscreen).call(docEl);
+      }
+    };
+    if (document.addEventListener) {
+      document.addEventListener("fullscreenchange", function(){
+        fsBtn.textContent = (document.fullscreenElement ? "全画面解除" : "全画面");
+      });
+    }
   })();
 
   // タイムアウトボタン（攻撃/守備どちらの局面でも使用可）
