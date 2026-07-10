@@ -3219,6 +3219,12 @@
 
   // ご意見ばん（開発者への匿名掲示板）の開閉・投稿・一覧表示
   var BOARD_API_URL = "/.netlify/functions/board";
+  // 取得済み投稿のメモリキャッシュ（null は未取得）。開き直しの高速表示に使う
+  var boardPostsCache = null;
+  // このセッション中に投稿した内容（楽観的更新分）。
+  // Blobs の整合性が eventual のため、直後のGETに含まれない場合でも
+  // サーバー一覧と統合して表示が消えないように保持しておく
+  var boardLocalPosts = [];
 
   function openBoard() {
     var board = document.getElementById("board");
@@ -3267,9 +3273,40 @@
     });
   }
 
+  // id で重複を取り除く（楽観的更新分とサーバー一覧の二重表示防止）
+  function dedupeBoardPosts(posts) {
+    var seen = {};
+    var result = [];
+    (posts || []).forEach(function (post) {
+      if (!post || !post.id || seen[post.id]) return;
+      seen[post.id] = true;
+      result.push(post);
+    });
+    return result;
+  }
+
+  // サーバー一覧とローカル投稿（楽観的更新分）を統合して新しい順に並べる
+  function mergeBoardPosts(serverPosts) {
+    var merged = dedupeBoardPosts(boardLocalPosts.concat(serverPosts || []));
+    merged.sort(function (a, b) { return b.createdAt - a.createdAt; });
+    return merged;
+  }
+
+  // サーバーから投稿一覧を取得する（失敗時は例外を投げる）
+  async function fetchBoardPosts() {
+    var res = await fetch(BOARD_API_URL, { method: "GET" });
+    if (!res.ok) throw new Error("status " + res.status);
+    var data = await res.json();
+    return data.posts || [];
+  }
+
   async function loadBoardPosts() {
     var list = document.getElementById("boardList");
-    if (list) {
+    var hasCache = boardPostsCache !== null;
+    if (hasCache) {
+      // キャッシュがあれば即表示し、裏で最新一覧を取得して差し替える
+      renderBoardPosts(boardPostsCache);
+    } else if (list) {
       list.textContent = "";
       var loading = document.createElement("div");
       loading.className = "board-empty";
@@ -3277,13 +3314,13 @@
       list.appendChild(loading);
     }
     try {
-      var res = await fetch(BOARD_API_URL, { method: "GET" });
-      if (!res.ok) throw new Error("status " + res.status);
-      var data = await res.json();
-      renderBoardPosts(data.posts || []);
+      var serverPosts = await fetchBoardPosts();
+      boardPostsCache = mergeBoardPosts(serverPosts);
+      renderBoardPosts(boardPostsCache);
     } catch (e) {
       if (typeof console !== "undefined" && console.error) console.error("ご意見ばん一覧の取得に失敗:", e);
-      if (list) {
+      // キャッシュ表示済みなら一覧を消さずエラー表示もしない（裏更新の失敗はログのみ）
+      if (!hasCache && list) {
         list.textContent = "";
         var errEl = document.createElement("div");
         errEl.className = "board-error";
@@ -3343,7 +3380,16 @@
             boardStatus.textContent = "とどいたよ！ありがとう";
             boardText.value = "";
             if (boardCount) boardCount.textContent = "0";
-            loadBoardPosts();
+            // 楽観的更新: Blobs の反映（eventual consistency）を待たず、
+            // レスポンスの投稿をローカル保持して即座に一覧へ反映する
+            if (data && data.post && data.post.id) {
+              boardLocalPosts.push(data.post);
+              boardPostsCache = mergeBoardPosts(boardPostsCache || []);
+              renderBoardPosts(boardPostsCache);
+            } else {
+              // 想定外にレスポンスへ投稿が含まれない場合は従来どおり再取得する
+              loadBoardPosts();
+            }
           }
         } catch (err) {
           if (typeof console !== "undefined" && console.error) console.error("ご意見ばん投稿に失敗:", err);
@@ -3363,6 +3409,16 @@
         closeBoard();
         e.preventDefault();
       }
+    });
+
+    // 起動時の先読み: 一覧を一度だけ取得してキャッシュを温める
+    // （Functions のコールドスタート回避と初回オープンの即時表示が目的。
+    //   ゲームの初期化とは独立した非同期処理で、失敗してもログを残すのみで
+    //   ゲーム進行には影響させない）
+    fetchBoardPosts().then(function (serverPosts) {
+      boardPostsCache = mergeBoardPosts(serverPosts);
+    }).catch(function (e) {
+      if (typeof console !== "undefined" && console.error) console.error("ご意見ばん一覧の先読みに失敗:", e);
     });
   })();
 
