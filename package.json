@@ -16,5 +16,8 @@
   "private": true,
   "devDependencies": {
     "@playwright/test": "^1.61.1"
+  },
+  "dependencies": {
+    "@netlify/blobs": "^10.7.9"
   }
 }

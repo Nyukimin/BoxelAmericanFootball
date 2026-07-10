@@ -67,6 +67,9 @@
   #start.demo { background: linear-gradient(180deg, rgba(10,15,8,.66), rgba(10,15,8,.40) 36%, rgba(10,15,8,.40) 64%, rgba(10,15,8,.66)); }
   #start.demo h1 { color: #ffffff; text-shadow: 0 2px 10px rgba(0,0,0,.55); }
   #start.demo p { color: #eef7e3; text-shadow: 0 1px 6px rgba(0,0,0,.55); }
+  #startBoardBtn { display: inline-block; margin-top: 14px; background: transparent; color: #2f6b3c; border: 1px solid #8fbf78; border-radius: 12px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  #startBoardBtn:active { transform: translateY(1px); }
+  #start.demo #startBoardBtn { color: #eef7e3; border-color: rgba(255,255,255,.6); }
   #demoBadge { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); z-index: 11; display: none; background: rgba(10,15,8,.62); color: #fff; letter-spacing: .22em; font-size: 12px; font-weight: 700; padding: 6px 16px; border-radius: 999px; border: 1px solid rgba(255,255,255,.45); pointer-events: none; }
   body.demo-active #demoBadge { display: block; }
   body.demo-active #info, body.demo-active #score, body.demo-active #views, body.demo-active #helpWrap, body.demo-active #timeoutWrap, body.demo-active #playerInfo, body.demo-active #playLog { display: none !important; }
@@ -81,7 +84,7 @@
   }
   @keyframes tapPulse { 0%, 100% { opacity: .6; } 50% { opacity: 1; } }
   #helpWrap { top: 52px; right: 14px; pointer-events: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: calc(100vw - 28px); }
-  #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn, #fsBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: var(--fs-btn); cursor: pointer; font-family: inherit; }
+  #helpBtn, #guideBtn, #boardBtn, #logBtn, #autoAdvanceBtn, #fsBtn { background: rgba(36,48,24,.7); color: #fff; border: 1px solid rgba(255,255,255,.3); border-radius: 9px; padding: 7px 11px; font-size: var(--fs-btn); cursor: pointer; font-family: inherit; }
   #autoAdvanceBtn.on { background: #ee8e3c; border-color: #ee8e3c; }
   #playLog { position: absolute; top: 92px; right: 14px; z-index: 18; display: none; pointer-events: auto; background: rgba(20,30,16,.94); color: #d9f0c8; border-radius: 10px; padding: 10px 12px; width: min(380px, 92vw); max-height: 60vh; overflow-y: auto; font-size: 11px; line-height: 1.5; font-family: ui-monospace, monospace; }
   #playLog .lg-head { display: flex; justify-content: space-between; align-items: center; color: #fff; font-weight: 700; margin-bottom: 6px; font-family: inherit; }
@@ -111,6 +114,32 @@
     #help h2 { font-size: 21px; }
     #help .caption { font-size: 14px; }
     #help .nav-btn, #help .close { padding: 10px 14px; }
+  }
+  #board { position: absolute; inset: 0; background: rgba(20,30,16,.92); z-index: 20; display: none; overflow-y: auto; pointer-events: auto; padding: 24px 14px 40px; }
+  #board .sheet { background: #fff; color: #2f4d22; max-width: 640px; margin: 0 auto; border-radius: 16px; padding: 18px; line-height: 1.65; }
+  #board h2 { color: #2f6b3c; font-size: 24px; margin: 0 0 8px; }
+  #board .caption { color: #2f4d22; font-size: 14px; margin-bottom: 14px; }
+  #board textarea { width: 100%; min-height: 96px; resize: vertical; border: 2px solid #cfe0c2; border-radius: 12px; padding: 10px 12px; font-family: inherit; font-size: 14px; color: #2f4d22; }
+  #board textarea:focus { outline: none; border-color: #ee8e3c; }
+  #board .board-count { text-align: right; font-size: 11px; color: #6b7d59; margin-top: 4px; }
+  #board .board-send-row { display: flex; justify-content: flex-end; margin-top: 8px; }
+  #board .board-send { background: #ee8e3c; color: #fff; border: none; border-radius: 12px; padding: 10px 22px; font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  #board .board-send:disabled { opacity: .5; cursor: default; }
+  #board .board-status { font-size: 13px; margin-top: 8px; min-height: 1.2em; }
+  #board .board-status.ok { color: #2f6b3c; font-weight: 700; }
+  #board .board-status.err { color: #c0392b; font-weight: 700; }
+  #board .board-list { margin-top: 18px; border-top: 1px solid #e2ecd8; padding-top: 14px; }
+  #board .board-list h3 { font-size: 15px; color: #2f6b3c; margin-bottom: 8px; }
+  #board .board-item { background: #f5f9ef; border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; }
+  #board .board-item .board-date { font-size: 11px; color: #6b7d59; margin-bottom: 3px; }
+  #board .board-item .board-text { font-size: 13px; color: #2f4d22; white-space: pre-wrap; word-break: break-word; }
+  #board .board-empty, #board .board-error { font-size: 13px; color: #6b7d59; }
+  #board .close { display: block; margin: 16px auto 0; padding: 11px 28px; font-size: 15px; background: #ee8e3c; color: #fff; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; font-family: inherit; }
+  @media (max-width: 559px) {
+    #board { padding: 14px 10px 28px; }
+    #board .sheet { padding: 14px; border-radius: 14px; }
+    #board h2 { font-size: 21px; }
+    #board .caption { font-size: 13px; }
   }
   #playerInfo { position: absolute; top: 92px; left: 14px; z-index: 8; display: none; pointer-events: auto; background: rgba(36,48,24,.92); color: #fff; border-radius: 12px; padding: 10px 14px; max-width: 290px; cursor: pointer; box-shadow: 0 4px 0 rgba(0,0,0,.15); }
   #playerInfo .pi-name { font-size: 16px; font-weight: 700; }
@@ -144,7 +173,7 @@
 
     /* 3段目: ヘルプ系ボタン（右寄せ・小さく1段に収める） */
     #helpWrap { top: calc(110px + env(safe-area-inset-top)); right: calc(6px + env(safe-area-inset-right)); gap: 4px; max-width: calc(100vw - 12px); }
-    #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn, #fsBtn { padding: 4px 7px; }
+    #helpBtn, #guideBtn, #boardBtn, #logBtn, #autoAdvanceBtn, #fsBtn { padding: 4px 7px; }
 
     /* 開閉パネルはインジケータ帯の下へ */
     #playerInfo { top: 140px; left: 6px; }
@@ -160,7 +189,7 @@
     #views { top: calc(8px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); gap: 5px; }
     #views button { padding: 5px 8px; }
     #helpWrap { top: calc(40px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); }
-    #helpBtn, #guideBtn, #logBtn, #autoAdvanceBtn, #fsBtn { padding: 5px 8px; }
+    #helpBtn, #guideBtn, #boardBtn, #logBtn, #autoAdvanceBtn, #fsBtn { padding: 5px 8px; }
     #timeoutWrap { top: calc(72px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); }
     #timeoutBtn { padding: 5px 8px; }
     #playerInfo { top: 72px; left: 8px; }
@@ -185,6 +214,7 @@
   <h1>ボクセル・フットボール</h1>
   <p>監督として作戦を選ぼう。4回のチャンスで10ヤード進めばOK！</p>
   <button class="big" id="startBtn">はじめる</button>
+  <button id="startBoardBtn" type="button">📮 ご意見ばん</button>
 </div>
 
 <div class="hud" id="info"><div class="pill"><div id="downdist">1st &amp; 10</div><div id="yardline">自陣30ヤード</div></div></div>
@@ -195,7 +225,7 @@
   <button data-v="top">真上</button>
   <button data-v="player">選手視点</button>
 </div>
-<div class="hud" id="helpWrap"><button id="helpBtn">？ アメフトのルール</button><button id="guideBtn">？ ゲームのすすめ方</button><button id="logBtn">ログ</button><button id="autoAdvanceBtn">自動すすむ: OFF</button><button id="fsBtn">全画面</button></div>
+<div class="hud" id="helpWrap"><button id="helpBtn">？ アメフトのルール</button><button id="guideBtn">？ ゲームのすすめ方</button><button id="boardBtn">📮 ご意見</button><button id="logBtn">ログ</button><button id="autoAdvanceBtn">自動すすむ: OFF</button><button id="fsBtn">全画面</button></div>
 <div id="playLog"></div>
 <div class="hud" id="timeoutWrap"><button id="timeoutBtn">タイムアウト 3</button></div>
 <div id="playerInfo"></div>
@@ -211,6 +241,26 @@
       <button class="nav-btn" id="helpNext" type="button">つぎ ▶</button>
     </div>
     <button class="close" id="helpClose" type="button">とじる</button>
+  </div>
+</div>
+
+<div id="board">
+  <div class="sheet">
+    <h2>みんなのご意見ばん</h2>
+    <p class="caption">開発者へのご意見・感想を書いてね。名前や住所などの個人情報は書かないでね。</p>
+    <form id="boardForm">
+      <textarea id="boardText" maxlength="300" placeholder="ここにご意見・感想を書いてね（300文字まで）"></textarea>
+      <div class="board-count"><span id="boardCount">0</span> / 300</div>
+      <div class="board-send-row">
+        <button class="board-send" id="boardSend" type="submit">おくる</button>
+      </div>
+      <div class="board-status" id="boardStatus"></div>
+    </form>
+    <div class="board-list">
+      <h3>みんなのご意見</h3>
+      <div id="boardList"></div>
+    </div>
+    <button class="close" id="boardClose" type="button">とじる</button>
   </div>
 </div>
 
@@ -3166,6 +3216,155 @@
       e.preventDefault();
     }
   });
+
+  // ご意見ばん（開発者への匿名掲示板）の開閉・投稿・一覧表示
+  var BOARD_API_URL = "/.netlify/functions/board";
+
+  function openBoard() {
+    var board = document.getElementById("board");
+    if (!board) return;
+    board.style.display = "block";
+    loadBoardPosts();
+  }
+
+  function closeBoard() {
+    var board = document.getElementById("board");
+    if (board) board.style.display = "none";
+  }
+
+  function formatBoardDate(createdAt) {
+    try {
+      return new Date(createdAt).toLocaleString("ja-JP");
+    } catch (e) {
+      return "";
+    }
+  }
+
+  function renderBoardPosts(posts) {
+    var list = document.getElementById("boardList");
+    if (!list) return;
+    list.textContent = "";
+    if (!posts || posts.length === 0) {
+      var empty = document.createElement("div");
+      empty.className = "board-empty";
+      empty.textContent = "まだ投稿がないよ";
+      list.appendChild(empty);
+      return;
+    }
+    posts.forEach(function (post) {
+      var item = document.createElement("div");
+      item.className = "board-item";
+      var dateEl = document.createElement("div");
+      dateEl.className = "board-date";
+      dateEl.textContent = formatBoardDate(post.createdAt);
+      var textEl = document.createElement("div");
+      textEl.className = "board-text";
+      // XSS対策のため必ず textContent で挿入する（innerHTMLは使わない）
+      textEl.textContent = post.text;
+      item.appendChild(dateEl);
+      item.appendChild(textEl);
+      list.appendChild(item);
+    });
+  }
+
+  async function loadBoardPosts() {
+    var list = document.getElementById("boardList");
+    if (list) {
+      list.textContent = "";
+      var loading = document.createElement("div");
+      loading.className = "board-empty";
+      loading.textContent = "よみこみ中…";
+      list.appendChild(loading);
+    }
+    try {
+      var res = await fetch(BOARD_API_URL, { method: "GET" });
+      if (!res.ok) throw new Error("status " + res.status);
+      var data = await res.json();
+      renderBoardPosts(data.posts || []);
+    } catch (e) {
+      if (typeof console !== "undefined" && console.error) console.error("ご意見ばん一覧の取得に失敗:", e);
+      if (list) {
+        list.textContent = "";
+        var errEl = document.createElement("div");
+        errEl.className = "board-error";
+        errEl.textContent = "投稿の読み込みに失敗しました";
+        list.appendChild(errEl);
+      }
+    }
+  }
+
+  (function () {
+    var startBoardBtn = document.getElementById("startBoardBtn");
+    var boardBtn = document.getElementById("boardBtn");
+    var boardClose = document.getElementById("boardClose");
+    var boardForm = document.getElementById("boardForm");
+    var boardText = document.getElementById("boardText");
+    var boardCount = document.getElementById("boardCount");
+    var boardSend = document.getElementById("boardSend");
+    var boardStatus = document.getElementById("boardStatus");
+
+    if (startBoardBtn) startBoardBtn.onclick = openBoard;
+    if (boardBtn) boardBtn.onclick = openBoard;
+    if (boardClose) boardClose.onclick = closeBoard;
+
+    if (boardText && boardCount) {
+      boardText.addEventListener("input", function () {
+        boardCount.textContent = String(boardText.value.length);
+      });
+    }
+
+    if (boardForm) {
+      boardForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        if (!boardText || !boardSend || !boardStatus) return;
+        var text = boardText.value.trim();
+        if (text.length < 1 || text.length > 300) {
+          boardStatus.className = "board-status err";
+          boardStatus.textContent = "1文字以上300文字以内で書いてね";
+          return;
+        }
+        boardSend.disabled = true;
+        boardStatus.className = "board-status";
+        boardStatus.textContent = "おくっています…";
+        try {
+          var res = await fetch(BOARD_API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: text })
+          });
+          var data = null;
+          try { data = await res.json(); } catch (e2) { data = null; }
+          if (!res.ok) {
+            var msg = (data && data.error) ? data.error : "投稿に失敗しました";
+            boardStatus.className = "board-status err";
+            boardStatus.textContent = msg;
+          } else {
+            boardStatus.className = "board-status ok";
+            boardStatus.textContent = "とどいたよ！ありがとう";
+            boardText.value = "";
+            if (boardCount) boardCount.textContent = "0";
+            loadBoardPosts();
+          }
+        } catch (err) {
+          if (typeof console !== "undefined" && console.error) console.error("ご意見ばん投稿に失敗:", err);
+          boardStatus.className = "board-status err";
+          boardStatus.textContent = "通信に失敗しました。もう一度おためしください";
+        } finally {
+          boardSend.disabled = false;
+        }
+      });
+    }
+
+    window.addEventListener("keydown", function (e) {
+      var board = document.getElementById("board");
+      if (!board || board.style.display !== "block") return;
+      if (renderer && e.target === renderer.domElement) return;
+      if (e.key === "Escape") {
+        closeBoard();
+        e.preventDefault();
+      }
+    });
+  })();
 
   // プレーログの開閉
   document.getElementById("logBtn").onclick = function () {

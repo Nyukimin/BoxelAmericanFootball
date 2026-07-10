@@ -13,6 +13,10 @@
   # アクセスポート（http://localhost:8888）
   port = 8888
 
+# Netlify Functions（ご意見掲示板APIなど）の配置先
+[functions]
+  directory = "netlify/functions"
+
 # docs/ 配下（企画書など）を公開URLから見えないようにする。
 # force = true で実ファイルより優先し、常に 404 を返す。
 [[redirects]]
